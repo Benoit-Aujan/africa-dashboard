@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Africa Properties — Daily Sales Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+    /* ─── Brand palette (from Aujan Group Holding PPT template) ─── */
+    :root {
+      --navy:       #1A1A2E;   /* primary dark — headers, main chrome   */
+      --navy2:      #0A1A8F;   /* secondary header rows                 */
+      --blue:       #142EFF;   /* accent highlight, active buttons      */
+      --blue-light: #E8EBFF;   /* table section bg, light fills         */
+      --bg:         #F5F5F7;   /* page background                       */
+      --card:       #FFFFFF;
+      --border:     #DEE2E6;
+      --text:       #0D0D0D;
+      --text-sm:    #6B7280;
+      --gray1:      #F5F5F7;
+      --gray2:      #E9ECEF;
+      --gray3:      #9CA3AF;
+      /* Performance colour coding — unchanged */
+      --green:      #2E7D32;
+      --green-bg:   #E8F5E9;
+      --amber:      #E65100;
+      --amber-bg:   #FFF3E0;
+      --red:        #C62828;
+      --red-bg:     #FFEBEE;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 13px;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    /* ─── Header ─────────────────────────────────────────────────── */
+    .site-header {
+      background: var(--navy);
+      color: white;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+    }
+    .site-header .brand-line {
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #8B9FFF;
+      margin-bottom: 2px;
+    }
+    .site-header h1 {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .last-updated { font-size: 11px; color: rgba(255,255,255,0.5); }
+    .legend {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      font-size: 11px;
+      color: rgba(255,255,255,0.75);
+    }
+    .legend-item { display: flex; align-items: center; gap: 4px; }
+
+    /* ─── Controls / slicer bar ──────────────────────────────────── */
+    .controls {
+      background: white;
+      border-bottom: 2px solid var(--blue);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .controls-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-sm);
+    }
+    .slicer-group {
+      display: flex;
+      gap: 4px;
+    }
+    .slicer-group button {
+      border: 1px solid var(--border);
+      background: white;
+      color: var(--text);
+      border-radius: 4px;
+      padding: 5px 14px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .slicer-group button.active {
+      background: var(--blue);
+      color: white;
+      border-color: var(--blue);
+      font-weight: 600;
+    }
+    .slicer-group button:hover:not(.active) { background: var(--blue-light); border-color: var(--blue); }
+
+    /* ─── Drill-down button ──────────────────────────────────────── */
+    #btn-drilldown {
+      border: 1.5px dashed var(--blue);
+      background: white;
+      color: var(--blue);
+      border-radius: 4px;
+      padding: 5px 14px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s;
+    }
+    #btn-drilldown:hover { background: var(--blue-light); }
+    #btn-drilldown.active {
+      background: var(--blue);
+      color: white;
+      border-style: solid;
+    }
+    /* Clickable rows when drill-down is on */
+    table.drilldown-ready tbody tr:not(.summary-row) {
+      cursor: pointer;
+    }
+    table.drilldown-ready tbody tr:not(.summary-row):hover {
+      background: #D0D9FF !important;
+      outline: 1px solid var(--blue);
+    }
+    table.drilldown-ready tbody tr:not(.summary-row) td.date-cell {
+      color: var(--blue);
+      text-decoration: underline dotted;
+    }
+
+    .period-nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+    .period-nav button {
+      background: var(--navy);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 5px 11px;
+      cursor: pointer;
+      font-size: 15px;
+      line-height: 1;
+    }
+    .period-nav button:hover { background: var(--navy2); }
+    #period-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--navy);
+      min-width: 120px;
+      text-align: center;
+    }
+
+    /* ─── MTD summary cards ──────────────────────────────────────── */
+    .mtd-section { padding: 16px 24px 0; }
+    .mtd-section h2 {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--text-sm);
+      margin-bottom: 10px;
+    }
+    .mtd-cards {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .mtd-card {
+      background: var(--card);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .mtd-card .card-header {
+      background: var(--navy);
+      color: white;
+      padding: 7px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      border-bottom: 2px solid var(--blue);
+    }
+    .mtd-card .card-body { padding: 8px 12px; }
+    .mtd-metric {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 5px 0;
+      border-bottom: 1px solid var(--gray1);
+      gap: 6px;
+    }
+    .mtd-metric:last-child { border-bottom: none; }
+    .mtd-metric .metric-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      color: var(--text-sm);
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .mtd-metric .metric-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--navy);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .mtd-variances { display: flex; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
+    .mtd-variance-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .mtd-var-label { font-size: 8px; text-transform: uppercase; color: var(--gray3); font-weight: 700; letter-spacing: 0.4px; }
+    .mtd-vs {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .mtd-vs.green { color: var(--green); background: var(--green-bg); }
+    .mtd-vs.amber { color: var(--amber); background: var(--amber-bg); }
+    .mtd-vs.red   { color: var(--red);   background: var(--red-bg); }
+    .mtd-vs.na    { color: var(--gray3); background: var(--gray1); }
+
+    /* ─── Tables section ─────────────────────────────────────────── */
+    .tables-section { padding: 0 24px 24px; }
+    .table-block {
+      background: white;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .table-block-header {
+      background: var(--blue-light);
+      border-bottom: 2px solid var(--blue);
+      padding: 9px 16px;
+    }
+    .table-block-header h3 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--navy);
+    }
+    .table-scroll { overflow-x: auto; }
+
+    /* ─── Data table ─────────────────────────────────────────────── */
+    table { border-collapse: collapse; width: 100%; min-width: 900px; font-size: 12px; }
+    thead tr.th-section th {
+      background: var(--blue);       /* brand blue — matches active slicer */
+      color: white;
+      text-align: center;
+      padding: 6px 4px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    thead tr.th-prop th {
+      background: #0A1A8F;           /* darker navy — one step below brand blue */
+      color: rgba(255,255,255,0.92);
+      text-align: center;
+      padding: 5px 4px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    thead tr.th-metric th {
+      background: #0C1F9E;           /* mid-step between prop and section */
+      color: rgba(255,255,255,0.82);
+      text-align: center;
+      padding: 4px 3px;
+      font-size: 10px;
+      font-weight: 600;
+      white-space: nowrap;
+      border-right: 1px solid rgba(255,255,255,0.12);
+    }
+    th.date-th { background: var(--blue) !important; }
+    th.prop-sep { border-left: 1px solid rgba(255,255,255,0.25) !important; }
+    th.adr-section { border-left: 3px solid rgba(255,255,255,0.5) !important; }
+
+    tbody tr { border-bottom: 1px solid var(--border); }
+    tbody tr:nth-child(even) { background: var(--gray1); }
+    tbody tr:hover { background: var(--blue-light); }
+    tbody tr.summary-row {
+      background: #EEF2FF !important;
+      font-weight: 700;
+      border-top: 2px solid var(--blue);
+      border-bottom: 2px solid var(--blue);
+    }
+    tbody tr.total-bottom {
+      background: #FFF8DC !important;
+      font-weight: 700;
+      border-top: 2px solid #F59E0B;
+      border-bottom: 2px solid #F59E0B;
+    }
+    tbody tr.total-bottom td.date-cell { background: #FFF8DC !important; }
+
+    td {
+      padding: 5px 4px;
+      text-align: right;
+      white-space: nowrap;
+      border-right: 1px solid var(--border);
+    }
+    td.date-cell {
+      text-align: left;
+      padding: 5px 8px;
+      font-weight: 600;
+      color: var(--navy);
+      white-space: nowrap;
+      background: white;
+      border-right: 2px solid var(--border);
+      position: sticky;
+      left: 0;
+      z-index: 1;
+    }
+    tbody tr:nth-child(even) td.date-cell { background: var(--gray1); }
+    tbody tr.summary-row td.date-cell     { background: #EEF2FF; }
+    tbody tr:hover td.date-cell           { background: var(--blue-light); }
+    td.actual-val { font-weight: 600; color: var(--navy); }
+    td.prop-sep   { border-left: 1px solid var(--border); }
+    td.adr-section { border-left: 3px solid var(--blue); }
+
+    /* ─── Variance cells ─────────────────────────────────────────── */
+    .var-cell {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 4px;
+      min-width: 56px;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot.green { background: var(--green); }
+    .dot.amber { background: #FF8F00; }
+    .dot.red   { background: var(--red); }
+    .dot.na    { background: var(--gray3); }
+    .var-text.green { color: var(--green); font-weight: 600; }
+    .var-text.amber { color: var(--amber); font-weight: 600; }
+    .var-text.red   { color: var(--red);   font-weight: 600; }
+    .var-text.na    { color: var(--gray3); }
+
+    .no-data {
+      padding: 40px;
+      text-align: center;
+      color: var(--text-sm);
+      font-size: 14px;
+    }
+    .site-footer {
+      background: var(--navy);
+      color: rgba(255,255,255,0.45);
+      font-size: 11px;
+      padding: 12px 24px;
+      text-align: center;
+    }
+
+    /* ─── Tables group label ─────────────────────────────────────────── */
+    .tables-group-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--navy);
+      background: var(--blue-light);
+      border-left: 4px solid var(--blue);
+      padding: 7px 14px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+    }
+
+    /* ─── Section row (table + chart side by side) ──────────────────── */
+    .section-row {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 16px;
+      margin-bottom: 16px;
+      align-items: start;
+    }
+    .section-row .table-block { margin-bottom: 0; }
+    .chart-column {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: sticky;
+      top: 130px;
+      align-self: start;
+    }
+    .chart-block {
+      background: white;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      padding: 14px 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .chart-block-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--navy);
+      margin-bottom: 8px;
+    }
+    .bench-toggles {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .bench-toggles-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--text-sm);
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+    .bench-btn {
+      border: 1px solid var(--border);
+      background: white;
+      color: var(--text-sm);
+      border-radius: 4px;
+      padding: 3px 10px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+    .bench-btn:hover { opacity: 0.8; }
+    .prop-toggles {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .prop-btn {
+      border: 1px solid var(--border);
+      background: white;
+      color: var(--text-sm);
+      border-radius: 4px;
+      padding: 3px 9px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+    .prop-btn.active { background: var(--navy); color: white; border-color: var(--navy); }
+    .prop-btn:hover:not(.active) { background: var(--blue-light); border-color: var(--blue); }
+
+    @media (max-width: 1100px) {
+      .section-row  { grid-template-columns: 1fr; }
+      .chart-column { position: static; }
+    }
+    @media (max-width: 768px) {
+      .mtd-cards { grid-template-columns: repeat(2, 1fr); }
+      .controls  { padding: 10px 12px; }
+      .mtd-section, .tables-section { padding-left: 12px; padding-right: 12px; }
+      .site-header { padding: 0 12px; }
+      .site-header h1 { font-size: 14px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────── -->
+<header class="site-header">
+  <div>
+    <div class="brand-line">Aujan Group Holding</div>
+    <h1>Africa Properties — Daily Sales Dashboard</h1>
+  </div>
+  <div class="header-right">
+    <span class="last-updated" id="last-updated"></span>
+    <div class="legend">
+      <div class="legend-item"><span class="dot green"></span>≥ 0%</div>
+      <div class="legend-item"><span class="dot amber"></span>0% to −5%</div>
+      <div class="legend-item"><span class="dot red"></span>&lt; −5%</div>
+    </div>
+  </div>
+</header>
+
+<!-- ── Controls / slicer ───────────────────────────────────────────── -->
+<div class="controls">
+  <span class="controls-label">View</span>
+  <div class="slicer-group" id="view-slicer">
+    <button onclick="setView('daily')"    id="btn-daily"    >Daily</button>
+    <button onclick="setView('weekly')"   id="btn-weekly"   >Weekly</button>
+    <button onclick="setView('monthly')"  id="btn-monthly"  class="active">Monthly</button>
+    <button onclick="setView('quarterly')" id="btn-quarterly">Quarterly</button>
+    <button onclick="setView('yearly')"   id="btn-yearly"   >Full Year</button>
+  </div>
+  <span class="controls-label" style="margin-left:8px">Metrics</span>
+  <div class="slicer-group">
+    <button onclick="setVarMode('pct')" id="btn-var-pct" class="active">Var %</button>
+    <button onclick="setVarMode('abs')" id="btn-var-abs">Var Abs / Ppt</button>
+  </div>
+  <button id="btn-drilldown" onclick="toggleDrillDown()" title="Activate then click any row to drill into that period">
+    &#8690; Drill Down
+  </button>
+
+  <div class="period-nav">
+    <button onclick="shiftPeriod(-1)">&#8249;</button>
+    <div id="period-label">Loading…</div>
+    <button onclick="shiftPeriod(1)">&#8250;</button>
+  </div>
+</div>
+
+<!-- ── MTD / Summary Cards ─────────────────────────────────────────── -->
+<div class="mtd-section">
+  <h2 id="summary-label">Month-to-Date Summary</h2>
+  <div class="mtd-cards" id="mtd-cards"></div>
+</div>
+
+<!-- ── Tables ───────────────────────────────────────────────────────── -->
+<div class="tables-section">
+
+  <!-- GROUP: Variance in % -->
+  <div id="group-pct">
+    <div class="tables-group-label">Variance in Percentage (%)</div>
+
+    <div class="section-row">
+      <div class="table-block">
+        <div class="table-block-header"><h3>Occupancy — Actual vs benchmarks (%)</h3></div>
+        <div class="table-scroll"><table id="table-pct-occ"><thead></thead><tbody></tbody></table></div>
+        <div id="no-data-pct-occ" class="no-data" style="display:none">No data for this period.</div>
+      </div>
+      <div class="chart-block">
+        <div class="chart-block-title">Occupancy</div>
+        <div class="prop-toggles" id="prop-toggles-pct-occ">
+          <span class="bench-toggles-label">Property:</span>
+          <button class="prop-btn active" data-prop="ABAZ"     onclick="setChartProp('pct-occ','ABAZ')">ABAZ</button>
+          <button class="prop-btn"        data-prop="Pemba"    onclick="setChartProp('pct-occ','Pemba')">Pemba</button>
+          <button class="prop-btn"        data-prop="ASLV"     onclick="setChartProp('pct-occ','ASLV')">ASLV</button>
+          <button class="prop-btn"        data-prop="Radisson" onclick="setChartProp('pct-occ','Radisson')">Radisson</button>
+        </div>
+        <div class="bench-toggles" id="bench-toggles-pct-occ">
+          <span class="bench-toggles-label">Show:</span>
+          <button class="bench-btn" data-bench="le"  onclick="toggleBench('pct-occ','le')">LE</button>
+          <button class="bench-btn" data-bench="bgt" onclick="toggleBench('pct-occ','bgt')">Budget</button>
+          <button class="bench-btn" data-bench="py"  onclick="toggleBench('pct-occ','py')">Prev Year</button>
+        </div>
+        <canvas id="chart-pct-occ"></canvas>
+      </div>
+    </div>
+
+    <div class="section-row">
+      <div class="table-block">
+        <div class="table-block-header"><h3>ADR (USD) — Actual vs benchmarks (%)</h3></div>
+        <div class="table-scroll"><table id="table-pct-adr"><thead></thead><tbody></tbody></table></div>
+        <div id="no-data-pct-adr" class="no-data" style="display:none">No data for this period.</div>
+      </div>
+      <div class="chart-block">
+        <div class="chart-block-title">ADR (USD)</div>
+        <div class="prop-toggles" id="prop-toggles-pct-adr">
+          <span class="bench-toggles-label">Property:</span>
+          <button class="prop-btn active" data-prop="ABAZ"     onclick="setChartProp('pct-adr','ABAZ')">ABAZ</button>
+          <button class="prop-btn"        data-prop="Pemba"    onclick="setChartProp('pct-adr','Pemba')">Pemba</button>
+          <button class="prop-btn"        data-prop="ASLV"     onclick="setChartProp('pct-adr','ASLV')">ASLV</button>
+          <button class="prop-btn"        data-prop="Radisson" onclick="setChartProp('pct-adr','Radisson')">Radisson</button>
+        </div>
+        <div class="bench-toggles" id="bench-toggles-pct-adr">
+          <span class="bench-toggles-label">Show:</span>
+          <button class="bench-btn" data-bench="le"  onclick="toggleBench('pct-adr','le')">LE</button>
+          <button class="bench-btn" data-bench="bgt" onclick="toggleBench('pct-adr','bgt')">Budget</button>
+          <button class="bench-btn" data-bench="py"  onclick="toggleBench('pct-adr','py')">Prev Year</button>
+        </div>
+        <canvas id="chart-pct-adr"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- GROUP: Variance in Abs/Ppt (hidden by default) -->
+  <div id="group-abs" style="display:none">
+    <div class="tables-group-label">Variance in Percentage Points &amp; Absolute Amounts</div>
+
+    <div class="section-row">
+      <div class="table-block">
+        <div class="table-block-header"><h3>Occupancy — Variance in percentage points (pp)</h3></div>
+        <div class="table-scroll"><table id="table-abs-occ"><thead></thead><tbody></tbody></table></div>
+        <div id="no-data-abs-occ" class="no-data" style="display:none">No data for this period.</div>
+      </div>
+      <div class="chart-block">
+        <div class="chart-block-title">Occupancy</div>
+        <div class="prop-toggles" id="prop-toggles-abs-occ">
+          <span class="bench-toggles-label">Property:</span>
+          <button class="prop-btn active" data-prop="ABAZ"     onclick="setChartProp('abs-occ','ABAZ')">ABAZ</button>
+          <button class="prop-btn"        data-prop="Pemba"    onclick="setChartProp('abs-occ','Pemba')">Pemba</button>
+          <button class="prop-btn"        data-prop="ASLV"     onclick="setChartProp('abs-occ','ASLV')">ASLV</button>
+          <button class="prop-btn"        data-prop="Radisson" onclick="setChartProp('abs-occ','Radisson')">Radisson</button>
+        </div>
+        <div class="bench-toggles" id="bench-toggles-abs-occ">
+          <span class="bench-toggles-label">Show:</span>
+          <button class="bench-btn" data-bench="le"  onclick="toggleBench('abs-occ','le')">LE</button>
+          <button class="bench-btn" data-bench="bgt" onclick="toggleBench('abs-occ','bgt')">Budget</button>
+          <button class="bench-btn" data-bench="py"  onclick="toggleBench('abs-occ','py')">Prev Year</button>
+        </div>
+        <canvas id="chart-abs-occ"></canvas>
+      </div>
+    </div>
+
+    <div class="section-row">
+      <div class="table-block">
+        <div class="table-block-header"><h3>ADR (USD) — Variance in absolute amounts ($)</h3></div>
+        <div class="table-scroll"><table id="table-abs-adr"><thead></thead><tbody></tbody></table></div>
+        <div id="no-data-abs-adr" class="no-data" style="display:none">No data for this period.</div>
+      </div>
+      <div class="chart-block">
+        <div class="chart-block-title">ADR (USD)</div>
+        <div class="prop-toggles" id="prop-toggles-abs-adr">
+          <span class="bench-toggles-label">Property:</span>
+          <button class="prop-btn active" data-prop="ABAZ"     onclick="setChartProp('abs-adr','ABAZ')">ABAZ</button>
+          <button class="prop-btn"        data-prop="Pemba"    onclick="setChartProp('abs-adr','Pemba')">Pemba</button>
+          <button class="prop-btn"        data-prop="ASLV"     onclick="setChartProp('abs-adr','ASLV')">ASLV</button>
+          <button class="prop-btn"        data-prop="Radisson" onclick="setChartProp('abs-adr','Radisson')">Radisson</button>
+        </div>
+        <div class="bench-toggles" id="bench-toggles-abs-adr">
+          <span class="bench-toggles-label">Show:</span>
+          <button class="bench-btn" data-bench="le"  onclick="toggleBench('abs-adr','le')">LE</button>
+          <button class="bench-btn" data-bench="bgt" onclick="toggleBench('abs-adr','bgt')">Budget</button>
+          <button class="bench-btn" data-bench="py"  onclick="toggleBench('abs-adr','py')">Prev Year</button>
+        </div>
+        <canvas id="chart-abs-adr"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer class="site-footer">
+  All amounts in USD &nbsp;·&nbsp; Budget &amp; Previous Year comparatives are full-month average daily occupancy and ADR &nbsp;·&nbsp;
+  Occupancy and ADR represent combined Hotel and Residences/Ursulas where applicable
+</footer>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────
+// Constants & state
+// ─────────────────────────────────────────────────────────────────────
+const PROPS = ["ABAZ", "Pemba", "ASLV", "Radisson"];
+
+let DATA        = null;
+let viewMode    = "monthly";   // daily | weekly | monthly | quarterly | yearly
+let periodIndex = 0;
+let periods     = [];
+let drillDown   = false;
+
+// Chart state — keyed by chartId: 'pct-occ', 'pct-adr', 'abs-occ', 'abs-adr'
+const chartInstances = { 'pct-occ': null, 'pct-adr': null, 'abs-occ': null, 'abs-adr': null };
+const chartBenches   = {
+  'pct-occ': { le: true, bgt: true, py: true },
+  'pct-adr': { le: true, bgt: true, py: true },
+  'abs-occ': { le: true, bgt: true, py: true },
+  'abs-adr': { le: true, bgt: true, py: true },
+};
+// Map chartId → base metric key in data.json ('occ' or 'adr')
+const chartMetric = { 'pct-occ': 'occ', 'pct-adr': 'adr', 'abs-occ': 'occ', 'abs-adr': 'adr' };
+// Selected property per chart (single-select)
+const chartProp = { 'pct-occ': 'ABAZ', 'pct-adr': 'ABAZ', 'abs-occ': 'ABAZ', 'abs-adr': 'ABAZ' };
+// Metrics view mode
+let varMode = 'pct';
+
+// ─────────────────────────────────────────────────────────────────────
+// Colored area fill plugin (green/red between actual and benchmark)
+// ─────────────────────────────────────────────────────────────────────
+function segIntersect(a1, a2, b1, b2) {
+  const dx1 = a2.x-a1.x, dy1 = a2.y-a1.y;
+  const dx2 = b2.x-b1.x, dy2 = b2.y-b1.y;
+  const d = dx1*dy2 - dy1*dx2;
+  if (Math.abs(d) < 0.5) return null;
+  const t = ((b1.x-a1.x)*dy2 - (b1.y-a1.y)*dx2) / d;
+  const u = ((b1.x-a1.x)*dy1 - (b1.y-a1.y)*dx1) / d;
+  if (t >= 0 && t <= 1 && u >= 0 && u <= 1)
+    return { x: a1.x + t*dx1, y: a1.y + t*dy1 };
+  return null;
+}
+
+const coloredAreaPlugin = {
+  id: 'coloredArea',
+  beforeDatasetsDraw(chart) {
+    if (!chart._colorArea) return;
+    const aIdx = chart.data.datasets.findIndex(d => d._isActual);
+    const bIdx = chart.data.datasets.findIndex(d => d._isBench);
+    if (aIdx < 0 || bIdx < 0) return;
+    const am = chart.getDatasetMeta(aIdx);
+    const bm = chart.getDatasetMeta(bIdx);
+    if (!am?.data?.length || !bm?.data?.length) return;
+    const ctx = chart.ctx;
+    const ca  = chart.chartArea;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(ca.left, ca.top, ca.width, ca.height); ctx.clip();
+    const G = 'rgba(46,125,50,0.28)', R = 'rgba(198,40,40,0.28)';
+    const n = Math.min(am.data.length, bm.data.length);
+    for (let i = 0; i < n-1; i++) {
+      const a1={x:am.data[i].x,   y:am.data[i].y},   a2={x:am.data[i+1].x, y:am.data[i+1].y};
+      const b1={x:bm.data[i].x,   y:bm.data[i].y},   b2={x:bm.data[i+1].x, y:bm.data[i+1].y};
+      const cross = segIntersect(a1, a2, b1, b2);
+      const aHi = a1.y < b1.y; // lower y = higher on screen = higher value
+      if (cross) {
+        ctx.beginPath(); ctx.moveTo(a1.x,a1.y); ctx.lineTo(cross.x,cross.y); ctx.lineTo(b1.x,b1.y); ctx.closePath();
+        ctx.fillStyle = aHi ? G : R; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(cross.x,cross.y); ctx.lineTo(a2.x,a2.y); ctx.lineTo(b2.x,b2.y); ctx.closePath();
+        ctx.fillStyle = aHi ? R : G; ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.moveTo(a1.x,a1.y); ctx.lineTo(a2.x,a2.y); ctx.lineTo(b2.x,b2.y); ctx.lineTo(b1.x,b1.y); ctx.closePath();
+        ctx.fillStyle = ((a1.y+a2.y) < (b1.y+b2.y)) ? G : R; ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────
+// Data load
+// ─────────────────────────────────────────────────────────────────────
+fetch("data/data.json")
+  .then(r => r.json())
+  .then(d => {
+    DATA = d;
+    document.getElementById("last-updated").textContent =
+      "Data as of: " + new Date(d.generated_at).toLocaleDateString("en-GB",
+        {day:"2-digit", month:"short", year:"numeric"});
+    buildPeriods();
+    periodIndex = periods.length - 1;
+    render();
+  })
+  .catch(err => {
+    document.querySelector(".mtd-section").innerHTML =
+      `<p style="padding:20px;color:red">Error loading data: ${err.message}</p>`;
+  });
+
+// ─────────────────────────────────────────────────────────────────────
+// View / period helpers
+// ─────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────
+// Drill-down
+// ─────────────────────────────────────────────────────────────────────
+function toggleDrillDown() {
+  drillDown = !drillDown;
+  document.getElementById("btn-drilldown").classList.toggle("active", drillDown);
+  // Re-render to apply/remove drilldown-ready class on tables
+  applyDrillDownStyling();
+}
+
+function applyDrillDownStyling() {
+  document.querySelectorAll("#table-pct-occ, #table-pct-adr, #table-abs-occ, #table-abs-adr").forEach(t => {
+    t.classList.toggle("drilldown-ready", drillDown);
+  });
+}
+
+function drillToKey(key) {
+  if (!drillDown) return;
+
+  let newView, newPeriodKey;
+  if (viewMode === "yearly") {
+    newView = "quarterly";   newPeriodKey = key;              // "2026"
+  } else if (viewMode === "quarterly") {
+    newView = "monthly";     newPeriodKey = key.split("-")[0]; // "2026-Q1" → "2026"
+  } else if (viewMode === "monthly") {
+    newView = "weekly";      newPeriodKey = key;              // "2026-03"
+  } else if (viewMode === "weekly") {
+    newView = "daily";       newPeriodKey = key.slice(0, 7);  // "2026-03-16" → "2026-03"
+  } else {
+    return; // already at daily
+  }
+
+  setView(newView);
+  const idx = periods.indexOf(newPeriodKey);
+  if (idx >= 0) periodIndex = idx;
+  drillDown = false;
+  document.getElementById("btn-drilldown").classList.remove("active");
+  render();
+}
+
+function setView(v) {
+  viewMode = v;
+  ["daily","weekly","monthly","quarterly","yearly"].forEach(id => {
+    const el = document.getElementById("btn-" + id);
+    if (el) el.classList.toggle("active", id === v);
+  });
+  buildPeriods();
+  periodIndex = periods.length - 1;
+  render();
+}
+
+function shiftPeriod(dir) {
+  periodIndex = Math.max(0, Math.min(periods.length - 1, periodIndex + dir));
+  render();
+}
+
+function quarterKey(dateStr) {
+  const [y, m] = dateStr.split("-").map(Number);
+  return `${y}-Q${Math.ceil(m / 3)}`;
+}
+
+function getWeekKey(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const dow = (d.getDay() + 6) % 7; // 0=Mon … 6=Sun
+  const ws = new Date(d);
+  ws.setDate(d.getDate() - dow);
+  return ws.toISOString().slice(0, 10);
+}
+
+function buildPeriods() {
+  const all = Object.keys(DATA.daily).sort();
+  const set = new Set();
+  all.forEach(d => {
+    if      (viewMode === "daily")     set.add(d.slice(0, 7));
+    else if (viewMode === "weekly")    set.add(d.slice(0, 7));
+    else if (viewMode === "monthly")   set.add(d.slice(0, 4));
+    else if (viewMode === "quarterly") set.add(d.slice(0, 4));
+    else if (viewMode === "yearly")    set.add("all");
+  });
+  periods = Array.from(set).sort();
+}
+
+function currentPeriodLabel() {
+  if (viewMode === "yearly") return "All Years";
+  const key = periods[periodIndex];
+  if (viewMode === "daily" || viewMode === "weekly") {
+    const [y, m] = key.split("-");
+    return new Date(y, m-1, 1).toLocaleDateString("en-GB", {month:"long", year:"numeric"});
+  }
+  return key;
+}
+
+// Returns the rows to display based on viewMode and current period
+function getRows() {
+  const key = periods[periodIndex] || "";
+  const allDates = Object.keys(DATA.daily).sort();
+
+  if (viewMode === "daily") {
+    return allDates
+      .filter(d => d.startsWith(key))
+      .reverse()
+      .map(d => ({ label: fmtDateShort(d), record: DATA.daily[d], key: d }));
+  }
+
+  if (viewMode === "weekly") {
+    const monthDates = allDates.filter(d => d.startsWith(key));
+    const weekMap = {};
+    monthDates.forEach(d => {
+      const wk = getWeekKey(d);
+      if (!weekMap[wk]) weekMap[wk] = [];
+      weekMap[wk].push(d);
+    });
+    return Object.entries(weekMap)
+      .sort(([a],[b]) => b.localeCompare(a))
+      .map(([wk, dates]) => ({
+        label: `${fmtDateShort(dates[0])}–${fmtDateShort(dates[dates.length-1])}`,
+        record: aggregateDays(dates),
+        key: wk,
+      }));
+  }
+
+  if (viewMode === "monthly") {
+    // Rows = months within selected year, newest first
+    const months = [...new Set(allDates.filter(d => d.startsWith(key)).map(d => d.slice(0,7)))].sort().reverse();
+    return months.map(m => ({
+      label: new Date(m + "-01").toLocaleDateString("en-GB", {month:"short", year:"numeric"}),
+      record: aggregateDays(allDates.filter(d => d.startsWith(m))),
+      key: m,
+    }));
+  }
+
+  if (viewMode === "quarterly") {
+    // Rows = quarters within selected year, newest first
+    const qMap = {};
+    allDates.filter(d => d.startsWith(key)).forEach(d => {
+      const q = quarterKey(d);
+      if (!qMap[q]) qMap[q] = [];
+      qMap[q].push(d);
+    });
+    return Object.entries(qMap).sort(([a],[b]) => b.localeCompare(a)).map(([q, dates]) => ({
+      label: q,
+      record: aggregateDays(dates),
+      key: q,
+    }));
+  }
+
+  if (viewMode === "yearly") {
+    // Rows = each year in dataset, newest first
+    const yMap = {};
+    allDates.forEach(d => {
+      const y = d.slice(0, 4);
+      if (!yMap[y]) yMap[y] = [];
+      yMap[y].push(d);
+    });
+    return Object.entries(yMap).sort(([a],[b]) => b.localeCompare(a)).map(([y, dates]) => ({
+      label: y,
+      record: aggregateDays(dates),
+      key: y,
+    }));
+  }
+  return [];
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Aggregation — average actuals, average benchmarks, recompute variances
+// ─────────────────────────────────────────────────────────────────────
+function avg(vals) {
+  const clean = vals.filter(v => v != null && isFinite(v));
+  return clean.length ? clean.reduce((a,b) => a+b, 0) / clean.length : null;
+}
+
+function aggregateDays(dates) {
+  if (!dates.length) return {};
+  const agg = {};
+  PROPS.forEach(p => {
+    const records = dates.map(d => DATA.daily[d]?.[p]).filter(Boolean);
+    if (!records.length) { agg[p] = {}; return; }
+
+    // Weighted actuals: use raw room counts where available, else simple avg.
+    // Zero-occ days (rooms_occ=0, rooms_avail>0) count in Occ denominator but
+    // not in ADR denominator (can't divide revenue by 0 occupied rooms).
+    let sumRoomsOcc = 0, sumRoomsAvail = 0, sumRevUsd = 0, nRaw = 0;
+    const occFallback = [], adrFallback = [];
+    for (const r of records) {
+      if (r.rooms_occ != null && r.rooms_avail != null && r.rev_usd != null) {
+        sumRoomsOcc   += r.rooms_occ;
+        sumRoomsAvail += r.rooms_avail;
+        sumRevUsd     += r.rev_usd;
+        nRaw++;
+      } else {
+        if (r.occ != null) occFallback.push(r.occ);
+        if (r.adr != null) adrFallback.push(r.adr);
+      }
+    }
+    let occ, adr;
+    if (nRaw > 0 && sumRoomsAvail > 0) {
+      occ = sumRoomsOcc / sumRoomsAvail;
+      adr = sumRoomsOcc > 0 ? sumRevUsd / sumRoomsOcc : null;
+    } else {
+      occ = avg(occFallback);
+      adr = avg(adrFallback);
+    }
+
+    // Benchmarks: weight by the same denominator as actuals so that
+    // multi-period variance = weighted avg of individual-period variances.
+    // Occ benchmarks → weight by rooms_avail (same denominator as actual Occ)
+    // ADR benchmarks → weight by rooms_occ   (same denominator as actual ADR)
+    // Fall back to simple avg when room counts are unavailable.
+    let sumOccLe=0, sumOccBgt=0, sumOccPy=0;
+    let sumAdrLe=0, sumAdrBgt=0, sumAdrPy=0;
+    let wAvail=0, wOcc=0;
+    for (const r of records) {
+      if (r.rooms_avail != null && r.rooms_avail > 0) {
+        if (r.occ_le  != null) { sumOccLe  += r.occ_le  * r.rooms_avail; }
+        if (r.occ_bgt != null) { sumOccBgt += r.occ_bgt * r.rooms_avail; }
+        if (r.occ_py  != null) { sumOccPy  += r.occ_py  * r.rooms_avail; }
+        wAvail += r.rooms_avail;
+      }
+      if (r.rooms_occ != null && r.rooms_occ > 0) {
+        if (r.adr_le  != null) { sumAdrLe  += r.adr_le  * r.rooms_occ; }
+        if (r.adr_bgt != null) { sumAdrBgt += r.adr_bgt * r.rooms_occ; }
+        if (r.adr_py  != null) { sumAdrPy  += r.adr_py  * r.rooms_occ; }
+        wOcc += r.rooms_occ;
+      }
+    }
+    const occ_le  = wAvail > 0 ? sumOccLe  / wAvail : avg(records.map(r => r.occ_le));
+    const occ_bgt = wAvail > 0 ? sumOccBgt / wAvail : avg(records.map(r => r.occ_bgt));
+    const occ_py  = wAvail > 0 ? sumOccPy  / wAvail : avg(records.map(r => r.occ_py));
+    const adr_le  = wOcc   > 0 ? sumAdrLe  / wOcc   : avg(records.map(r => r.adr_le));
+    const adr_bgt = wOcc   > 0 ? sumAdrBgt / wOcc   : avg(records.map(r => r.adr_bgt));
+    const adr_py  = wOcc   > 0 ? sumAdrPy  / wOcc   : avg(records.map(r => r.adr_py));
+
+    const rel = (a, b) => (a != null && b != null && b !== 0) ? (a - b) / b : null;
+    const pp  = (a, b) => (a != null && b != null) ? (a - b) * 100 : null;
+    const abs = (a, b) => (a != null && b != null) ? a - b : null;
+
+    agg[p] = {
+      occ, occ_le, occ_bgt, occ_py,
+      occ_vs_le:  rel(occ, occ_le),
+      occ_vs_bgt: rel(occ, occ_bgt),
+      occ_vs_py:  rel(occ, occ_py),
+      occ_vs_le_pp:  pp(occ, occ_le),
+      occ_vs_bgt_pp: pp(occ, occ_bgt),
+      occ_vs_py_pp:  pp(occ, occ_py),
+      adr, adr_le, adr_bgt, adr_py,
+      adr_vs_le:  rel(adr, adr_le),
+      adr_vs_bgt: rel(adr, adr_bgt),
+      adr_vs_py:  rel(adr, adr_py),
+      adr_vs_le_abs:  abs(adr, adr_le),
+      adr_vs_bgt_abs: abs(adr, adr_bgt),
+      adr_vs_py_abs:  abs(adr, adr_py),
+    };
+  });
+  return agg;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Formatting
+// ─────────────────────────────────────────────────────────────────────
+function fmtOcc(v)  { return v == null ? "—" : (v * 100).toFixed(1) + "%"; }
+function fmtAdr(v)  { return v == null ? "—" : "$" + v.toFixed(0); }
+function fmtPct(v)  { return v == null ? "—" : (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%"; }
+function fmtPP(v)   { return v == null ? "—" : (v >= 0 ? "+" : "") + v.toFixed(1) + "pp"; }
+function fmtAbsDiff(v) {
+  if (v == null) return "—";
+  return (v >= 0 ? "+$" : "−$") + Math.abs(v).toFixed(0);
+}
+function fmtDateShort(d) {
+  return new Date(d + "T00:00:00").toLocaleDateString("en-GB", {day:"2-digit", month:"short"});
+}
+
+function withVars(d) {
+  const rel = (a, b) => (a != null && b != null && b !== 0) ? (a - b) / b : null;
+  const pp  = (a, b) => (a != null && b != null) ? (a - b) * 100 : null;
+  const abs = (a, b) => (a != null && b != null) ? a - b : null;
+  return Object.assign({}, d, {
+    occ_vs_le:      rel(d.occ, d.occ_le),
+    occ_vs_bgt:     rel(d.occ, d.occ_bgt),
+    occ_vs_py:      rel(d.occ, d.occ_py),
+    occ_vs_le_pp:   pp(d.occ, d.occ_le),
+    occ_vs_bgt_pp:  pp(d.occ, d.occ_bgt),
+    occ_vs_py_pp:   pp(d.occ, d.occ_py),
+    adr_vs_le:      rel(d.adr, d.adr_le),
+    adr_vs_bgt:     rel(d.adr, d.adr_bgt),
+    adr_vs_py:      rel(d.adr, d.adr_py),
+    adr_vs_le_abs:  abs(d.adr, d.adr_le),
+    adr_vs_bgt_abs: abs(d.adr, d.adr_bgt),
+    adr_vs_py_abs:  abs(d.adr, d.adr_py),
+  });
+}
+
+function varClass(v) {
+  if (v == null) return "na";
+  if (v >= 0)    return "green";
+  if (v >= -0.05) return "amber";
+  return "red";
+}
+
+function varCell(val, fmtFn, colorVal) {
+  const cls = varClass(colorVal !== undefined ? colorVal : val);
+  return `<span class="var-cell"><span class="dot ${cls}"></span><span class="var-text ${cls}">${fmtFn(val)}</span></span>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Table head
+// ─────────────────────────────────────────────────────────────────────
+function buildHead(tableId, isAbs, section) {
+  const thead = document.querySelector(`#${tableId} thead`);
+  thead.innerHTML = "";
+  const vs  = isAbs ? ["Vs LE","Vs Bgt","Vs PY"] : ["Vs LE%","Vs Bgt%","Vs PY%"];
+  const lbl = section === 'occ'
+    ? (isAbs ? "Occ" : "Occ")
+    : (isAbs ? "ADR ($)" : "ADR");
+  const sectionTitle = section === 'occ' ? "OCCUPANCY" : "ADR";
+
+  const r1 = `<tr class="th-section">
+    <th class="date-th" rowspan="3">Date</th>
+    <th colspan="${PROPS.length * 4}">${sectionTitle}</th>
+  </tr>`;
+
+  let r2 = `<tr class="th-prop">`;
+  PROPS.forEach((p, i) => {
+    r2 += `<th colspan="4" class="${i > 0 ? 'prop-sep' : ''}">${p}</th>`;
+  });
+  r2 += `</tr>`;
+
+  let r3 = `<tr class="th-metric">`;
+  PROPS.forEach((p, i) => {
+    r3 += `<th class="${i > 0 ? 'prop-sep' : ''}">${lbl}</th><th>${vs[0]}</th><th>${vs[1]}</th><th>${vs[2]}</th>`;
+  });
+  r3 += `</tr>`;
+
+  thead.innerHTML = r1 + r2 + r3;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Table row
+// ─────────────────────────────────────────────────────────────────────
+function buildRow(label, record, isAbs, isSummary, rowKey, extraClass = null, section = 'occ') {
+  const tr = document.createElement("tr");
+  if (isSummary) tr.className = "summary-row";
+  else if (extraClass) tr.className = extraClass;
+  if (rowKey && !isSummary && !extraClass) {
+    tr.onclick = () => drillToKey(rowKey);
+  }
+  let html = `<td class="date-cell">${label}</td>`;
+
+  if (section === 'occ') {
+    PROPS.forEach((p, i) => {
+      const d = withVars(record[p] || {});
+      html += `<td class="actual-val${i > 0 ? ' prop-sep' : ''}">${fmtOcc(d.occ)}</td>`;
+      if (isAbs) {
+        html += `<td>${varCell(d.occ_vs_le_pp,  fmtPP, d.occ_vs_le)}</td>`;
+        html += `<td>${varCell(d.occ_vs_bgt_pp, fmtPP, d.occ_vs_bgt)}</td>`;
+        html += `<td>${varCell(d.occ_vs_py_pp,  fmtPP, d.occ_vs_py)}</td>`;
+      } else {
+        html += `<td>${varCell(d.occ_vs_le,  fmtPct)}</td>`;
+        html += `<td>${varCell(d.occ_vs_bgt, fmtPct)}</td>`;
+        html += `<td>${varCell(d.occ_vs_py,  fmtPct)}</td>`;
+      }
+    });
+  } else {
+    PROPS.forEach((p, i) => {
+      const d = withVars(record[p] || {});
+      html += `<td class="actual-val${i > 0 ? ' prop-sep' : ''}">${fmtAdr(d.adr)}</td>`;
+      if (isAbs) {
+        html += `<td>${varCell(d.adr_vs_le_abs,  fmtAbsDiff, d.adr_vs_le)}</td>`;
+        html += `<td>${varCell(d.adr_vs_bgt_abs, fmtAbsDiff, d.adr_vs_bgt)}</td>`;
+        html += `<td>${varCell(d.adr_vs_py_abs,  fmtAbsDiff, d.adr_vs_py)}</td>`;
+      } else {
+        html += `<td>${varCell(d.adr_vs_le,  fmtPct)}</td>`;
+        html += `<td>${varCell(d.adr_vs_bgt, fmtPct)}</td>`;
+        html += `<td>${varCell(d.adr_vs_py,  fmtPct)}</td>`;
+      }
+    });
+  }
+
+  tr.innerHTML = html;
+  return tr;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MTD / summary cards
+// ─────────────────────────────────────────────────────────────────────
+function summaryCardRecord() {
+  if (viewMode === "daily" || viewMode === "weekly") {
+    const key = periods[periodIndex] || "";
+    // key is a date ("2026-03-15") or month prefix ("2026-03"); extract YYYY-MM
+    const monthPrefix = key.slice(0, 7);
+    const datesInMonth = Object.keys(DATA.daily).filter(d => d.startsWith(monthPrefix));
+    return datesInMonth.length ? aggregateDays(datesInMonth) : null;
+  }
+  // Aggregate all days in current period
+  const rows = getRows();
+  if (!rows.length) return null;
+  const allDates = rows.flatMap(r => {
+    // collect individual dates from this row's key
+    return Object.keys(DATA.daily).filter(d => {
+      if (viewMode === "monthly")   return d.startsWith(r.key);
+      if (viewMode === "quarterly") return quarterKey(d) === r.key;
+      if (viewMode === "yearly")    return d.startsWith(r.key);
+      return false;
+    });
+  });
+  return aggregateDays(allDates);
+}
+
+function renderMtdCards(record) {
+  const container = document.getElementById("mtd-cards");
+  const summaryLabelText = {
+    daily: "Month-to-Date Summary",
+    weekly: "Month-to-Date Summary",
+    monthly: "Year-to-Date Summary",
+    quarterly: "Period Summary",
+    yearly: "All-Time Summary",
+  }[viewMode];
+  document.getElementById("summary-label").textContent = summaryLabelText;
+
+  if (!record) {
+    container.innerHTML = PROPS.map(p => `
+      <div class="mtd-card">
+        <div class="card-header">${p}</div>
+        <div class="card-body"><p style="color:var(--gray3);text-align:center;padding:10px;font-size:11px">No data</p></div>
+      </div>`).join("");
+    return;
+  }
+
+  const isAbs = varMode === 'abs';
+  container.innerHTML = PROPS.map(p => {
+    const d = record[p] || {};
+    const vsTag = (val, fmtFn) =>
+      `<span class="mtd-vs ${varClass(val)}">${fmtFn(val)}</span>`;
+    const leOccTag = (val) =>
+      val != null ? vsTag(val, isAbs ? fmtPP      : fmtPct)     : `<span class="mtd-vs na">LE N/A</span>`;
+    const leAdrTag = (val) =>
+      val != null ? vsTag(val, isAbs ? fmtAbsDiff : fmtPct)     : `<span class="mtd-vs na">LE N/A</span>`;
+    return `
+      <div class="mtd-card">
+        <div class="card-header">${p}</div>
+        <div class="card-body">
+          <div class="mtd-metric">
+            <div>
+              <div class="metric-label">Occupancy</div>
+              <div class="mtd-variances">
+                <div class="mtd-variance-group"><div class="mtd-var-label">vs LE</div>${leOccTag(isAbs ? d.occ_vs_le_pp  : d.occ_vs_le)}</div>
+                <div class="mtd-variance-group"><div class="mtd-var-label">vs Bgt</div>${vsTag(isAbs ? d.occ_vs_bgt_pp : d.occ_vs_bgt, isAbs ? fmtPP      : fmtPct)}</div>
+                <div class="mtd-variance-group"><div class="mtd-var-label">vs PY</div>${vsTag(isAbs ? d.occ_vs_py_pp  : d.occ_vs_py,  isAbs ? fmtPP      : fmtPct)}</div>
+              </div>
+            </div>
+            <div class="metric-value">${fmtOcc(d.occ)}</div>
+          </div>
+          <div class="mtd-metric">
+            <div>
+              <div class="metric-label">ADR</div>
+              <div class="mtd-variances">
+                <div class="mtd-variance-group"><div class="mtd-var-label">vs LE</div>${leAdrTag(isAbs ? d.adr_vs_le_abs  : d.adr_vs_le)}</div>
+                <div class="mtd-variance-group"><div class="mtd-var-label">vs Bgt</div>${vsTag(isAbs ? d.adr_vs_bgt_abs : d.adr_vs_bgt, isAbs ? fmtAbsDiff : fmtPct)}</div>
+                <div class="mtd-variance-group"><div class="mtd-var-label">vs PY</div>${vsTag(isAbs ? d.adr_vs_py_abs  : d.adr_vs_py,  isAbs ? fmtAbsDiff : fmtPct)}</div>
+              </div>
+            </div>
+            <div class="metric-value">${fmtAdr(d.adr)}</div>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Charts
+// ─────────────────────────────────────────────────────────────────────
+function setVarMode(mode) {
+  varMode = mode;
+  document.getElementById('btn-var-pct').classList.toggle('active', mode === 'pct');
+  document.getElementById('btn-var-abs').classList.toggle('active', mode === 'abs');
+  document.getElementById('group-pct').style.display = mode === 'pct' ? '' : 'none';
+  document.getElementById('group-abs').style.display = mode === 'abs' ? '' : 'none';
+  renderMtdCards(summaryCardRecord());
+}
+
+function setChartProp(chartId, prop) {
+  chartProp[chartId] = prop;
+  document.querySelectorAll(`#prop-toggles-${chartId} .prop-btn`).forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.prop === prop);
+  });
+  updateChart(chartId);
+}
+
+function toggleBench(chartId, bench) {
+  const benches = chartBenches[chartId];
+  if (!benches) return;
+  const activeCount = Object.values(benches).filter(Boolean).length;
+  if (benches[bench] && activeCount === 1) return; // keep at least one
+  benches[bench] = !benches[bench];
+  updateBenchButtons(chartId);
+  updateChart(chartId);
+}
+
+function updateBenchButtons(chartId) {
+  const benches = chartBenches[chartId];
+  const colors  = { le: '#FF8F00', bgt: '#1565C0', py: '#6A1B9A' };
+  document.querySelectorAll(`#bench-toggles-${chartId} .bench-btn`).forEach(btn => {
+    const b = btn.dataset.bench;
+    if (benches[b]) {
+      btn.style.background  = colors[b];
+      btn.style.color       = 'white';
+      btn.style.borderColor = colors[b];
+    } else {
+      btn.style.background  = 'white';
+      btn.style.color       = '#6B7280';
+      btn.style.borderColor = '#DEE2E6';
+    }
+  });
+}
+
+function updateChart(chartId) {
+  const benches = chartBenches[chartId];
+  const metric  = chartMetric[chartId]; // 'occ' or 'adr'
+  const canvas  = document.getElementById(`chart-${chartId}`);
+  if (!canvas || !DATA || !benches) return;
+
+  const rows = [...getRows()].reverse(); // oldest → newest for x-axis
+  if (!rows.length) {
+    if (chartInstances[chartId]) { chartInstances[chartId].destroy(); chartInstances[chartId] = null; }
+    return;
+  }
+
+  const labels = rows.map(r => r.label);
+  const prop = chartProp[chartId] || PROPS[0];
+  const getPropVal = (record, key) => {
+    const v = record[prop]?.[key];
+    return (v != null && isFinite(v)) ? v : null;
+  };
+  const toDisp = metric === 'occ'
+    ? v => v != null ? parseFloat((v * 100).toFixed(2)) : null
+    : v => v != null ? parseFloat(v.toFixed(2)) : null;
+
+  const actualData = rows.map(r => toDisp(getPropVal(r.record, metric)));
+  const bData = {
+    le:  rows.map(r => toDisp(getPropVal(r.record, `${metric}_le`))),
+    bgt: rows.map(r => toDisp(getPropVal(r.record, `${metric}_bgt`))),
+    py:  rows.map(r => toDisp(getPropVal(r.record, `${metric}_py`))),
+  };
+
+  const activeBenches = ['le','bgt','py'].filter(b => benches[b]);
+  const colorArea = activeBenches.length === 1;
+  const bColors = { le: '#FF8F00', bgt: '#1565C0', py: '#6A1B9A' };
+  const bLabels = { le: 'LE', bgt: 'Budget', py: 'Prev Year' };
+
+  const datasets = [{
+    label: 'Actual',
+    data: actualData,
+    borderColor: '#1A1A2E',
+    backgroundColor: 'transparent',
+    borderWidth: 2.5,
+    pointBackgroundColor: '#1A1A2E',
+    pointRadius: 3,
+    tension: 0,           // straight lines so area fill matches exactly
+    _isActual: true,
+    _isBench: false,
+  }];
+
+  let firstBench = true;
+  activeBenches.forEach(b => {
+    datasets.push({
+      label: bLabels[b],
+      data: bData[b],
+      borderColor: bColors[b],
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      borderDash: [5, 3],
+      pointBackgroundColor: bColors[b],
+      pointRadius: 2,
+      tension: 0,         // must match actual tension for area fill to align
+      _isActual: false,
+      _isBench: colorArea && firstBench,
+    });
+    firstBench = false;
+  });
+
+  const yTickCb = metric === 'occ'
+    ? v => v.toFixed(0) + '%'
+    : v => '$' + v.toFixed(0);
+  const ttCb = ctx => {
+    const v = ctx.parsed.y;
+    return `${ctx.dataset.label}: ${metric === 'occ' ? v.toFixed(1) + '%' : '$' + v.toFixed(0)}`;
+  };
+
+  if (chartInstances[chartId]) chartInstances[chartId].destroy();
+
+  const newChart = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      aspectRatio: 1.6,
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 }, padding: 8 } },
+        tooltip: { callbacks: { label: ttCb } },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 12 }, grid: { color: 'rgba(0,0,0,0.05)' } },
+        y: { ticks: { font: { size: 10 }, callback: yTickCb }, grid: { color: 'rgba(0,0,0,0.05)' } },
+      },
+    },
+    plugins: [coloredAreaPlugin],
+  });
+  newChart._colorArea = colorArea;
+  chartInstances[chartId] = newChart;
+}
+
+function updateCharts() {
+  Object.keys(chartInstances).forEach(id => updateChart(id));
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Main render
+// ─────────────────────────────────────────────────────────────────────
+function render() {
+  if (!DATA) return;
+
+  // Period nav visibility — hide nav for yearly (single "all" period)
+  document.querySelector(".period-nav").style.visibility =
+    viewMode === "yearly" ? "hidden" : "visible";
+  document.getElementById("period-label").textContent = currentPeriodLabel();
+
+  const rows = getRows();
+  const summaryRec = summaryCardRecord();
+  renderMtdCards(summaryRec);
+
+  const TABLE_CONFIGS = [
+    { id: 'pct-occ', isAbs: false, section: 'occ' },
+    { id: 'pct-adr', isAbs: false, section: 'adr' },
+    { id: 'abs-occ', isAbs: true,  section: 'occ' },
+    { id: 'abs-adr', isAbs: true,  section: 'adr' },
+  ];
+
+  TABLE_CONFIGS.forEach(({ id, isAbs, section }) => {
+    const tableEl  = document.querySelector(`#table-${id}`);
+    const noDataEl = document.getElementById(`no-data-${id}`);
+
+    if (!rows.length) {
+      tableEl.style.display = "none";
+      noDataEl.style.display = "block";
+      return;
+    }
+    tableEl.style.display = "";
+    noDataEl.style.display = "none";
+
+    buildHead(`table-${id}`, isAbs, section);
+    const tbody = tableEl.querySelector("tbody");
+    tbody.innerHTML = "";
+
+    rows.forEach(({ label, record, key }) => {
+      tbody.appendChild(buildRow(label, record, isAbs, false, key, null, section));
+    });
+
+    // Bottom total row
+    if ((viewMode === "daily" || viewMode === "weekly") && summaryRec) {
+      tbody.appendChild(buildRow("MTD", summaryRec, isAbs, false, null, "total-bottom", section));
+    } else if ((viewMode === "monthly" || viewMode === "quarterly") && rows.length) {
+      const yearKey  = periods[periodIndex] || "";
+      const ytdDates = Object.keys(DATA.daily).filter(d => d.startsWith(yearKey));
+      if (ytdDates.length) {
+        const ytdRec = aggregateDays(ytdDates);
+        tbody.appendChild(buildRow("YTD", ytdRec, isAbs, false, null, "total-bottom", section));
+      }
+    }
+  });
+
+  applyDrillDownStyling();
+  Object.keys(chartInstances).forEach(id => updateBenchButtons(id));
+  updateCharts();
+}
+</script>
+</body>
+</html>

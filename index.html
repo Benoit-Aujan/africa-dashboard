@@ -508,8 +508,8 @@
   <span class="controls-label">View</span>
   <div class="slicer-group" id="view-slicer">
     <button onclick="setView('daily')"    id="btn-daily"    >Daily</button>
-    <button onclick="setView('weekly')"   id="btn-weekly"   >Weekly</button>
-    <button onclick="setView('monthly')"  id="btn-monthly"  class="active">Monthly</button>
+    <button onclick="setView('weekly')"   id="btn-weekly"   class="active">Weekly</button>
+    <button onclick="setView('monthly')"  id="btn-monthly"  >Monthly</button>
     <button onclick="setView('quarterly')" id="btn-quarterly">Quarterly</button>
     <button onclick="setView('yearly')"   id="btn-yearly"   >Full Year</button>
   </div>
@@ -662,7 +662,7 @@
 const PROPS = ["ABAZ", "Pemba", "ASLV", "Radisson"];
 
 let DATA        = null;
-let viewMode    = "monthly";   // daily | weekly | monthly | quarterly | yearly
+let viewMode    = "weekly";    // daily | weekly | monthly | quarterly | yearly
 let periodIndex = 0;
 let periods     = [];
 let drillDown   = false;
@@ -670,10 +670,10 @@ let drillDown   = false;
 // Chart state — keyed by chartId: 'pct-occ', 'pct-adr', 'abs-occ', 'abs-adr'
 const chartInstances = { 'pct-occ': null, 'pct-adr': null, 'abs-occ': null, 'abs-adr': null };
 const chartBenches   = {
-  'pct-occ': { le: true, bgt: true, py: true },
-  'pct-adr': { le: true, bgt: true, py: true },
-  'abs-occ': { le: true, bgt: true, py: true },
-  'abs-adr': { le: true, bgt: true, py: true },
+  'pct-occ': { le: false, bgt: true, py: false },
+  'pct-adr': { le: false, bgt: true, py: false },
+  'abs-occ': { le: false, bgt: true, py: false },
+  'abs-adr': { le: false, bgt: true, py: false },
 };
 // Map chartId → base metric key in data.json ('occ' or 'adr')
 const chartMetric = { 'pct-occ': 'occ', 'pct-adr': 'adr', 'abs-occ': 'occ', 'abs-adr': 'adr' };

@@ -252,29 +252,44 @@ def run_pipeline(dry_run):
         print(f"  WARNING: pipeline error:\n{result.stderr}")
 
 
+DISC_TO = [
+    "Benoit Haas <benoit.haas@aujan.com>",
+    "Glenda Gallego <Glenda.Gallego@aujan.com>",
+    "Muhammad Moiz Siddiqui <moiz.siddiqui@aujan.com>",
+]
+
+
 def draft_email(outlook, sender, subject, discs):
-    """Creates an Outlook draft (not sent) listing discrepancies."""
+    """
+    Sends a discrepancy alert to Benoit + Glenda + Moiz.
+    The original property sender is noted at the top (not directly emailed —
+    Benoit should review and forward if needed).
+    """
     mail         = outlook.CreateItem(0)   # olMailItem
-    mail.To      = sender
-    mail.Subject = f"RE: {subject} — Data discrepancy query"
+    mail.To      = "; ".join(DISC_TO)
+    mail.Subject = f"Africa Dashboard — Data discrepancy alert ({subject})"
 
     rows = "\n".join(
         f"  - {d['prop']} on {d['date']}:\n"
-        f"      Database : {d['db']['rooms_occ']} rooms / ${d['db']['rev_usd']:.0f} revenue\n"
-        f"      Your file: {d['email']['rooms_occ']} rooms / ${d['email']['rev_usd']:.0f} revenue"
+        f"      On record : {d['db']['rooms_occ']} rooms / ${d['db']['rev_usd']:.0f} revenue\n"
+        f"      New file  : {d['email']['rooms_occ']} rooms / ${d['email']['rev_usd']:.0f} revenue"
         for d in discs
     )
     mail.Body = (
+        f"*** This alert should be forwarded to the property contact: {sender} ***\n"
+        f"*** Subject of their original email: {subject} ***\n"
+        f"{'─' * 60}\n\n"
         "Dear team,\n\n"
-        "While processing your latest file, I noticed the following figures differ "
-        "from what we previously had on record. Could you please confirm which are correct?\n\n"
+        "While processing the latest property file, the following figures differ "
+        "from what was previously recorded. Please review and confirm which are correct "
+        "before forwarding to the property:\n\n"
         f"{rows}\n\n"
-        "The dashboard has been updated with your latest figures. "
+        "The dashboard has been updated with the latest figures. "
         "Please let me know if any correction is needed.\n\n"
         "Best regards,\nBenoit"
     )
-    mail.Save()
-    print(f"  Draft saved (To: {sender})")
+    mail.Send()
+    print(f"  Discrepancy alert sent to: {', '.join(DISC_TO)}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

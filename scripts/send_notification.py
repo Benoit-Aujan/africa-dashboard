@@ -29,14 +29,35 @@ SUBJECT = "Africa Properties — Weekly Sales Dashboard"
 
 
 def take_screenshot():
-    """Renders the live dashboard and screenshots the MTD summary cards."""
+    """
+    Opens the live dashboard in headless Chrome, sets the correct slicers
+    (Weekly view, Var Abs/Ppt, current month), then screenshots the MTD cards.
+    """
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1280, "height": 900})
             page.goto(DASHBOARD_URL)
-            page.wait_for_timeout(5000)   # allow data.json to load and charts to render
+            page.wait_for_timeout(5000)   # allow data.json and charts to fully load
+
+            # Ensure correct slicers are active
+            page.locator("#btn-weekly").click()        # Weekly view
+            page.locator("#btn-var-abs").click()       # Var Abs / Ppt
+            page.wait_for_timeout(800)                 # let tables re-render
+
+            # Navigate to current month: click › until period label matches
+            today = datetime.date.today()
+            target = today.strftime("%B %Y")           # e.g. "April 2026"
+            for _ in range(24):                        # max 24 clicks forward/back
+                label = page.locator("#period-label").inner_text()
+                if label == target:
+                    break
+                # If label is before target, go forward; otherwise back
+                page.locator("button:has-text('›')").click()
+                page.wait_for_timeout(200)
+
+            page.wait_for_timeout(500)
             mtd = page.locator(".mtd-section")
             mtd.screenshot(path=SNAPSHOT_PATH)
             browser.close()

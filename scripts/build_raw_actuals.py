@@ -28,9 +28,10 @@ DATA_JSON = os.path.join(BASE, "data", "data.json")
 TEMP = "C:/Users/benoit.haas/AppData/Local/Temp"
 FX = 65.0  # MZN → USD
 
-# All tracker files in Temp, sorted oldest→newest so newer files win on overlap
+# All tracker files in Temp (date-prefixed saves from email + legacy undated copies),
+# sorted oldest→newest so newer files win on overlap.
 TRACKER_FILES = sorted(
-    glob.glob(f"{TEMP}/VPEM_ABAZ_ASLV*Pick Up Tracker*.xlsx"),
+    glob.glob(f"{TEMP}/*VPEM_ABAZ_ASLV*Pick Up Tracker*.xlsx"),
     key=os.path.getmtime,
 )
 
@@ -357,6 +358,94 @@ def parse_abaz_daily(path):
     return {date_str: {"rooms_occ": rooms_occ, "rooms_avail": rooms_avail, "rev_usd": rev_usd}}
 
 
+# ── VPEM (Pemba) Daily Income .xlsb ──────────────────────────────────────────
+
+# Known physical room inventory for VPEM (Avani Pemba) including Residences.
+# Used as rooms_avail when reading individual daily xlsb files.
+VPEM_CAPACITY = 168
+
+def parse_vpem_daily(path):
+    """
+    Parses a VPEM-Daily Income-YYYY.MM.DD.xlsb file sent by Hamilton Pasipamire.
+    Returns {date_str: {rooms_occ, rooms_avail, rev_usd}} or {}.
+
+    Sheet "Contents":  Year/Month/Day in col 14 (0-indexed) of rows 11/12/13.
+    Sheet "Rooms Drivers":
+      - Row with label "Total Rooms + Residences (ex. Comp & House)":
+            col 3 = today rooms sold (excl comp/house),  col 4 = today rev MZN
+      - Row "Complementary"       (code CMP): col 3 = comp rooms today
+      - Row "Complimentary Owner" (code COO): col 3 = comp owner rooms today
+      - Row "House Use"           (code HOU): col 3 = house use rooms today
+    rooms_occ  = sold + comp + comp_owner + house
+    rooms_avail = VPEM_CAPACITY (physical inventory)
+    rev_usd     = rev_mzn / FX
+    """
+    if not _XLSB_OK:
+        print("  WARNING: pyxlsb not installed — cannot parse VPEM xlsb")
+        return {}
+
+    # Date from filename first (more reliable than sheet content)
+    m = re.search(r"(\d{4})\.(\d{2})\.(\d{2})", path)
+    if m:
+        date_str = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    else:
+        # Fall back to Contents sheet
+        try:
+            with open_xlsb(path) as wb:
+                with wb.get_sheet("Contents") as sh:
+                    rows = list(sh.rows())
+                year  = int(rows[11][14].v) if len(rows) > 11 else None
+                month = int(rows[12][14].v) if len(rows) > 12 else None
+                day   = int(rows[13][14].v) if len(rows) > 13 else None
+                if not all([year, month, day]):
+                    return {}
+                date_str = f"{year}-{month:02d}-{day:02d}"
+        except Exception:
+            return {}
+
+    try:
+        with open_xlsb(path) as wb:
+            with wb.get_sheet("Rooms Drivers") as sh:
+                rows = list(sh.rows())
+
+        sold = comp = comp_owner = house = rev_mzn = None
+        for row in rows:
+            vals = [c.v for c in row]
+            if len(vals) < 5:
+                continue
+            label = vals[1]
+            if label == "Total Rooms + Residences (ex. Comp & House)":
+                if isinstance(vals[3], (int, float)):
+                    sold    = vals[3]
+                    rev_mzn = vals[4] if isinstance(vals[4], (int, float)) else None
+            elif label == "Complementary":
+                if isinstance(vals[3], (int, float)):
+                    comp = vals[3]
+            elif label == "Complimentary Owner":
+                if isinstance(vals[3], (int, float)):
+                    comp_owner = vals[3]
+            elif label == "House Use":
+                if isinstance(vals[3], (int, float)):
+                    house = vals[3]
+
+        if sold is None or rev_mzn is None:
+            return {}
+
+        rooms_occ = int(round(sold + (comp or 0) + (comp_owner or 0) + (house or 0)))
+        rev_usd   = round(rev_mzn / FX, 4)
+
+        return {
+            date_str: {
+                "rooms_occ":   rooms_occ,
+                "rooms_avail": VPEM_CAPACITY,
+                "rev_usd":     rev_usd,
+            }
+        }
+    except Exception as e:
+        print(f"  ERROR parsing VPEM xlsb {os.path.basename(path)}: {e}")
+        return {}
+
+
 # ── Merge into data.json ──────────────────────────────────────────────────────
 
 def main():
@@ -368,7 +457,11 @@ def main():
     #    actuals[prop][date_str] = {rooms_occ, rooms_avail, rev_usd}
     actuals = {}
     for path in TRACKER_FILES:
-        tracker = parse_tracker(path)
+        try:
+            tracker = parse_tracker(path)
+        except Exception as e:
+            print(f"  SKIP tracker {os.path.basename(path)}: {e}")
+            continue
         for prop, days in tracker.items():
             prop_store = actuals.setdefault(prop, {})
             prop_store.update(days)  # later file (2026) overwrites if overlap

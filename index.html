@@ -515,8 +515,8 @@
   </div>
   <span class="controls-label" style="margin-left:8px">Metrics</span>
   <div class="slicer-group">
-    <button onclick="setVarMode('pct')" id="btn-var-pct" class="active">Var %</button>
-    <button onclick="setVarMode('abs')" id="btn-var-abs">Var Abs / Ppt</button>
+    <button onclick="setVarMode('pct')" id="btn-var-pct">Var %</button>
+    <button onclick="setVarMode('abs')" id="btn-var-abs" class="active">Var Abs / Ppt</button>
   </div>
   <button id="btn-drilldown" onclick="toggleDrillDown()" title="Activate then click any row to drill into that period">
     &#8690; Drill Down
@@ -539,7 +539,7 @@
 <div class="tables-section">
 
   <!-- GROUP: Variance in % -->
-  <div id="group-pct">
+  <div id="group-pct" style="display:none">
     <div class="tables-group-label">Variance in Percentage (%)</div>
 
     <div class="section-row">
@@ -593,8 +593,8 @@
     </div>
   </div>
 
-  <!-- GROUP: Variance in Abs/Ppt (hidden by default) -->
-  <div id="group-abs" style="display:none">
+  <!-- GROUP: Variance in Abs/Ppt -->
+  <div id="group-abs">
     <div class="tables-group-label">Variance in Percentage Points &amp; Absolute Amounts</div>
 
     <div class="section-row">
@@ -680,7 +680,7 @@ const chartMetric = { 'pct-occ': 'occ', 'pct-adr': 'adr', 'abs-occ': 'occ', 'abs
 // Selected property per chart (single-select)
 const chartProp = { 'pct-occ': 'ABAZ', 'pct-adr': 'ABAZ', 'abs-occ': 'ABAZ', 'abs-adr': 'ABAZ' };
 // Metrics view mode
-let varMode = 'pct';
+let varMode = 'abs';
 
 // ─────────────────────────────────────────────────────────────────────
 // Colored area fill plugin (green/red between actual and benchmark)

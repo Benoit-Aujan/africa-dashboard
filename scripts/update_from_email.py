@@ -36,7 +36,7 @@ import argparse, datetime, json, os, re, subprocess, sys
 import win32com.client
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from build_raw_actuals import parse_tracker, parse_radisson, parse_abaz_daily, parse_radisson_pdf
+from build_raw_actuals import parse_tracker, parse_radisson, parse_abaz_daily, parse_vpem_daily, parse_radisson_pdf
 
 BASE      = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_JSON = os.path.join(BASE, "data", "data.json")
@@ -187,8 +187,12 @@ def parse_attachment(att_type, path):
                 return {p: d for p, d in parsed.items() if p == "ABAZ"} if parsed else None
 
         elif att_type == "pemba":
-            parsed = parse_tracker(path)
-            return {p: d for p, d in parsed.items() if p == "Pemba"} if parsed else None
+            if path.lower().endswith(".xlsb"):
+                days = parse_vpem_daily(path)
+                return {"Pemba": days} if days else None
+            else:
+                parsed = parse_tracker(path)
+                return {p: d for p, d in parsed.items() if p == "Pemba"} if parsed else None
 
         elif att_type == "radisson_xls":
             days = parse_radisson(path)

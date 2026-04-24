@@ -25,7 +25,7 @@ CC = [
     "Benoit Haas <benoit.haas@aujan.com>",
 ]
 
-SUBJECT = "Africa Properties — Weekly Sales Dashboard"
+SUBJECT = "Africa Properties — Daily Sales Dashboard update"
 
 
 def take_screenshot():
@@ -72,7 +72,7 @@ def build_html(img_b64):
 
     img_tag = (
         f'<img src="data:image/png;base64,{img_b64}" '
-        f'width="690" style="display:block;max-width:100%;border-radius:8px;'
+        f'width="966" style="display:block;max-width:100%;border-radius:8px;'
         f'margin:16px 0;" alt="Africa Properties MTD Summary">'
         if img_b64 else ""
     )

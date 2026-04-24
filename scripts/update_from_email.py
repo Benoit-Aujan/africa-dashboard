@@ -80,9 +80,9 @@ ALL_SENDERS = (
 EXCEL_RE = re.compile(r"\.xlsx?b?$", re.IGNORECASE)   # .xls, .xlsx, .xlsb
 PDF_RE   = re.compile(r"\.pdf$",    re.IGNORECASE)
 
-# Any difference at all is a discrepancy — zero tolerance
+# Flag if rooms differ by any amount, or revenue differs by $1 USD or more
 TOLERANCE_ROOMS = 0
-TOLERANCE_REV   = 0.0
+TOLERANCE_REV   = 1.0
 
 
 # ── Outlook helpers ───────────────────────────────────────────────────────────

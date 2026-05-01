@@ -446,6 +446,260 @@ def parse_vpem_daily(path):
         return {}
 
 
+# ── Management Pack parsers ───────────────────────────────────────────────────
+#
+# Hotel Finance Template .xlsb (ABAZ / ASLV / VPEM) — identical 74-sheet template.
+# Sheet "Monthly" → LE figures for the current reporting month.
+# Sheet "Budget"  → Budget figures for all 12 months of the year.
+#
+# Row indices (0-based) for the data we need:
+#   Row 6  = Room Revenue         Row 7  = Residence Revenue
+#   Row 94 = Room Available       Row 95 = Residence Available
+#   Row 96 = Rooms Sold (w/o Comp) Row 97 = Residence Sold
+#   Row 99 = Complimentary Rooms
+#
+# Column indices (0-based) per calendar month (quarterly totals are skipped):
+MGMT_PACK_MONTH_COLS = {
+    1: 3,  2: 4,  3: 5,          # Jan Feb Mar
+    4: 8,  5: 9,  6: 10,         # Apr May Jun
+    7: 13, 8: 14, 9: 15,         # Jul Aug Sep
+    10: 18, 11: 19, 12: 20,      # Oct Nov Dec
+}
+
+
+def _safe_xlsb(rows, row_idx, col_idx):
+    """Return float from an xlsb row list, or None on any error."""
+    try:
+        v = rows[row_idx][col_idx].v
+        return float(v) if isinstance(v, (int, float)) else None
+    except (IndexError, TypeError, AttributeError):
+        return None
+
+
+def parse_mgmt_pack_minor(path, reporting_month, is_mzn=True):
+    """
+    Parses an ABAZ / ASLV / VPEM Hotel Finance Template .xlsb management pack.
+
+    reporting_month : datetime.date with day=1 for the month being reported.
+    is_mzn          : True for MZN-denominated properties (ABAZ, Pemba);
+                      False for USD-denominated (ASLV).
+
+    Revenue in the template is in THOUSANDS of local currency.
+    Conversion: MZN-thousands → USD  =  value * 1000 / FX
+                USD-thousands → USD  =  value * 1000
+
+    Returns:
+      {
+        "LE":     { "YYYY-MM": {"occ": float, "adr": float} },   # current month only
+        "Budget": { "YYYY-MM": {"occ": float, "adr": float} },   # all 12 months
+      }
+
+    OCC = (rooms_sold + res_sold + comp) / (room_avail + res_avail)
+    ADR = (room_rev + res_rev)           / (rooms_sold + res_sold + comp)
+    """
+    if not _XLSB_OK:
+        print("  WARNING: pyxlsb not installed — cannot parse management pack xlsb")
+        return {}
+
+    rev_scale = (1000.0 / FX) if is_mzn else 1000.0
+
+    year      = reporting_month.year
+    cur_month = reporting_month.month
+    results   = {"LE": {}, "Budget": {}}
+
+    def _month_vals(rows, month_num):
+        col = MGMT_PACK_MONTH_COLS.get(month_num)
+        if col is None:
+            return None, None
+        room_rev   = (_safe_xlsb(rows, 6,  col) or 0) * rev_scale
+        res_rev    = (_safe_xlsb(rows, 7,  col) or 0) * rev_scale
+        room_avail = _safe_xlsb(rows, 94, col) or 0
+        res_avail  = _safe_xlsb(rows, 95, col) or 0
+        rooms_sold = _safe_xlsb(rows, 96, col) or 0
+        res_sold   = _safe_xlsb(rows, 97, col) or 0
+        comp       = _safe_xlsb(rows, 99, col) or 0
+
+        total_avail = room_avail + res_avail
+        total_occ   = rooms_sold + res_sold + comp
+        total_rev   = room_rev + res_rev
+
+        if total_avail <= 0 or total_occ <= 0:
+            return None, None
+        occ = round(total_occ / total_avail, 6)
+        adr = round(total_rev / total_occ,   4) if total_occ > 0 else None
+        return occ, adr
+
+    try:
+        with open_xlsb(path) as wb:
+            # ── Monthly sheet → LE for current month ──────────────────────────
+            try:
+                with wb.get_sheet("Monthly") as sh:
+                    monthly_rows = list(sh.rows())
+                occ, adr = _month_vals(monthly_rows, cur_month)
+                if occ is not None:
+                    results["LE"][f"{year}-{cur_month:02d}"] = {"occ": occ, "adr": adr}
+            except Exception as e:
+                print(f"  WARNING: 'Monthly' sheet error in {os.path.basename(path)}: {e}")
+
+            # ── Budget sheet → all 12 months ──────────────────────────────────
+            try:
+                with wb.get_sheet("Budget") as sh:
+                    budget_rows = list(sh.rows())
+                for mon in range(1, 13):
+                    occ, adr = _month_vals(budget_rows, mon)
+                    if occ is not None:
+                        results["Budget"][f"{year}-{mon:02d}"] = {"occ": occ, "adr": adr}
+            except Exception as e:
+                print(f"  WARNING: 'Budget' sheet error in {os.path.basename(path)}: {e}")
+
+    except Exception as e:
+        print(f"  ERROR parsing management pack {os.path.basename(path)}: {e}")
+        return {}
+
+    print(f"  Mgmt pack minor parsed: LE={list(results['LE'].keys())}, "
+          f"Budget={len(results['Budget'])} months")
+    return results
+
+
+def parse_mgmt_pack_radisson(path, reporting_month):
+    """
+    Parses the MPMZH USAH 12MONTHS REPORT .xlsx management pack.
+
+    File: "7.MPMZH USAH 12MONTHS REPORT <MONTH> <YEAR>.xlsx"  (single "Data" sheet)
+    Revenue: MZN (Local Currency), in thousands -> converted with * 1000 / FX.
+
+    Layout (173 rows x 149 cols):
+      - Column M (0-based index 12): row labels
+      - Row 14:  ROOMS REVENUE
+      - Row 111: TOTAL ROOMS AVAILABLE
+      - Row 113: TOTAL ROOMS OCCUPIED
+      - Row 12:  Month labels "YYYY.MON" (e.g. "2026.JAN") -- one per 8-column block
+      - 8-column block (offsets relative to month-label column):
+            +0  ACTUAL revenue
+            +1  BUDGET_4 revenue      <- Budget revenue
+            +2  spacer                <- Budget Avail/Occ
+            +3  ACTUAL(LY) revenue
+            +4  spacer                <- LY Actual Avail/Occ
+            +5  FORECAST_12 revenue   <- LE revenue
+            +6  spacer                <- LE Avail/Occ
+            +7  spacer (empty)
+
+    Returns:
+      {
+        "LE":     { "YYYY-MM": {"occ": float, "adr": float} },
+        "Budget": { "YYYY-MM": {"occ": float, "adr": float} },
+      }
+    """
+    results = {"LE": {}, "Budget": {}}
+
+    def _sf(row, col):
+        try:
+            v = row[col]
+            return float(v) if v is not None else None
+        except (IndexError, TypeError, ValueError):
+            return None
+
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        ws = wb["Data"]
+        all_rows = [list(r) for r in ws.iter_rows(values_only=True)]
+        wb.close()
+
+        if not all_rows:
+            return {}
+
+        # ── Find metric rows by scanning column M (0-based index 12) ──────────
+        LABEL_COL = 12
+        rev_row = avail_row = occ_row = None
+        for i, row in enumerate(all_rows):
+            if len(row) <= LABEL_COL or row[LABEL_COL] is None:
+                continue
+            lbl = str(row[LABEL_COL]).strip().upper()
+            if "ROOMS REVENUE" in lbl and "TOTAL" not in lbl and rev_row is None:
+                rev_row = i
+            elif "TOTAL ROOMS AVAILABLE" in lbl and avail_row is None:
+                avail_row = i
+            elif "TOTAL ROOMS OCCUPIED" in lbl and occ_row is None:
+                occ_row = i
+            if rev_row is not None and avail_row is not None and occ_row is not None:
+                break
+
+        if None in (rev_row, avail_row, occ_row):
+            print(f"  WARNING: Missing metric rows: rev={rev_row} avail={avail_row} "
+                  f"occ={occ_row} in {os.path.basename(path)}")
+            return {}
+
+        # ── Find month labels row ─────────────────────────────────────────────
+        # The correct row has "YYYY.MON" cells at regular 8-column intervals,
+        # all in the same year (the reporting year).
+        # Strategy: pick the row with the most matches WHERE THE MAJORITY ARE
+        # in the reporting year (not historical).  Row 12 in this template.
+        year = reporting_month.year
+        month_labels_row_idx = None
+        best_score = 0
+        for i, row in enumerate(all_rows[:20]):
+            rpt_year_count = sum(
+                1 for v in row
+                if v and re.match(rf"{year}\.\w{{3,5}}$", str(v).strip())
+            )
+            if rpt_year_count > best_score:
+                best_score = rpt_year_count
+                month_labels_row_idx = i
+        if month_labels_row_idx is None or best_score < 3:
+            print(f"  WARNING: Could not find {year} month labels row in {os.path.basename(path)}")
+            return {}
+
+        # Map column -> (year, month_num)
+        col_to_month = {}
+        for j, cell in enumerate(all_rows[month_labels_row_idx]):
+            if cell is None:
+                continue
+            m = re.match(r"(\d{4})\.(\w{3,5})$", str(cell).strip())
+            if m:
+                yr, mon = int(m.group(1)), MONTH_MAP.get(m.group(2).upper())
+                if mon:
+                    col_to_month[j] = (yr, mon)
+
+        if not col_to_month:
+            return {}
+
+        # ── Extract Budget and LE for each month block ─────────────────────────
+        # Month-label column = block start (ACTUAL).
+        # Offsets: +1=BUDGET_4 rev, +2=Budget rooms, +5=LE rev, +6=LE rooms
+        for b_start, (yr, mon) in col_to_month.items():
+            if not 1 <= mon <= 12:
+                continue
+            month_str = f"{yr}-{mon:02d}"
+
+            # Budget
+            bgt_rev   = _sf(all_rows[rev_row],   b_start + 1)
+            bgt_avail = _sf(all_rows[avail_row], b_start + 2)
+            bgt_occ   = _sf(all_rows[occ_row],   b_start + 2)
+            if bgt_rev and bgt_avail and bgt_occ and bgt_avail > 0 and bgt_occ > 0:
+                results["Budget"][month_str] = {
+                    "occ": round(bgt_occ / bgt_avail, 6),
+                    "adr": round(bgt_rev * 1000 / FX / bgt_occ, 4),
+                }
+
+            # LE (FORECAST_12)
+            le_rev   = _sf(all_rows[rev_row],   b_start + 5)
+            le_avail = _sf(all_rows[avail_row], b_start + 6)
+            le_occ   = _sf(all_rows[occ_row],   b_start + 6)
+            if le_rev and le_avail and le_occ and le_avail > 0 and le_occ > 0:
+                results["LE"][month_str] = {
+                    "occ": round(le_occ / le_avail, 6),
+                    "adr": round(le_rev * 1000 / FX / le_occ, 4),
+                }
+
+    except Exception as e:
+        print(f"  ERROR parsing Radisson mgmt pack {os.path.basename(path)}: {e}")
+        return {}
+
+    print(f"  Mgmt pack Radisson parsed: LE={len(results['LE'])} months, "
+          f"Budget={len(results['Budget'])} months")
+    return results
+
+
 # ── Merge into data.json ──────────────────────────────────────────────────────
 
 def main():
@@ -606,8 +860,28 @@ def main():
                 if v is not None:
                     monthly_vals.setdefault((prop, month, field), []).append(v)
 
-    # Compute the monthly benchmark (average of available values)
+    # Compute the monthly benchmark from weekly reports (average of available values)
     monthly_bench = {k: sum(vs) / len(vs) for k, vs in monthly_vals.items()}
+
+    # Override with management pack benchmarks stored in data.json["monthly_benchmarks"].
+    # Management pack figures are the official monthly close — they take precedence over
+    # weekly pick-up report values.
+    FIELD_MAP = {"occ_le": "occ", "adr_le": "adr", "occ_bgt": "occ", "adr_bgt": "adr"}
+    BENCH_SRC  = {"occ_le": "LE", "adr_le": "LE", "occ_bgt": "Budget", "adr_bgt": "Budget"}
+    mgmt_raw = data.get("monthly_benchmarks", {})
+    mgmt_override = 0
+    for prop in PROPS_ALL:
+        prop_mb = mgmt_raw.get(prop, {})
+        for month_str, mb in prop_mb.items():
+            for bench_field in BENCH_FIELDS:
+                src_section = BENCH_SRC[bench_field]
+                src_key     = FIELD_MAP[bench_field]
+                v = mb.get(src_section, {}).get(src_key) if isinstance(mb.get(src_section), dict) else None
+                if v is not None:
+                    monthly_bench[(prop, month_str, bench_field)] = v
+                    mgmt_override += 1
+    if mgmt_override:
+        print(f"Management pack overrides applied: {mgmt_override} benchmark cells")
 
     # Write back to every day
     bench_applied = 0

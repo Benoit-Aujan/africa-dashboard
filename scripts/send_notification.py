@@ -32,39 +32,53 @@ def take_screenshot():
     """
     Opens the live dashboard in headless Chrome, sets the correct slicers
     (Weekly view, Var Abs/Ppt, current month), then screenshots the MTD cards.
+    Retries up to 3 times with a 30-second gap to handle GitHub Pages deployment lag.
     """
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1280, "height": 900})
-            page.goto(DASHBOARD_URL)
-            page.wait_for_timeout(5000)   # allow data.json and charts to fully load
+    MAX_ATTEMPTS = 3
+    RETRY_WAIT_MS = 30_000   # 30 s between attempts
 
-            # Ensure correct slicers are active
-            page.locator("#btn-weekly").click()        # Weekly view
-            page.locator("#btn-var-abs").click()       # Var Abs / Ppt
-            page.wait_for_timeout(800)                 # let tables re-render
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page(viewport={"width": 1280, "height": 900})
 
-            # Navigate to current month: click › until period label matches
-            today = datetime.date.today()
-            target = today.strftime("%B %Y")           # e.g. "April 2026"
-            for _ in range(24):                        # max 24 clicks forward/back
-                label = page.locator("#period-label").inner_text()
-                if label == target:
-                    break
-                # If label is before target, go forward; otherwise back
-                page.locator("button:has-text('›')").click()
-                page.wait_for_timeout(200)
+                # Wait for the page AND its network requests (data.json) to finish
+                page.goto(DASHBOARD_URL, wait_until="networkidle", timeout=30_000)
+                page.wait_for_timeout(3000)   # let JS render after data loads
 
-            page.wait_for_timeout(500)
-            mtd = page.locator(".mtd-section")
-            mtd.screenshot(path=SNAPSHOT_PATH)
-            browser.close()
-        return True
-    except Exception as e:
-        print(f"  WARNING: screenshot failed: {e}")
-        return False
+                # Ensure correct slicers are active
+                page.locator("#btn-weekly").click()        # Weekly view
+                page.locator("#btn-var-abs").click()       # Var Abs / Ppt
+                page.wait_for_timeout(800)                 # let tables re-render
+
+                # Navigate to current month: click › until period label matches
+                today = datetime.date.today()
+                target = today.strftime("%B %Y")           # e.g. "April 2026"
+                for _ in range(24):                        # max 24 clicks forward/back
+                    label = page.locator("#period-label").inner_text()
+                    if label == target:
+                        break
+                    page.locator("button:has-text('›')").click()
+                    page.wait_for_timeout(200)
+
+                page.wait_for_timeout(500)
+                mtd = page.locator(".mtd-section")
+                mtd.screenshot(path=SNAPSHOT_PATH)
+                browser.close()
+            print(f"  Screenshot OK (attempt {attempt})")
+            return True
+
+        except Exception as e:
+            print(f"  WARNING: screenshot attempt {attempt}/{MAX_ATTEMPTS} failed: {e}")
+            if attempt < MAX_ATTEMPTS:
+                print(f"  Retrying in 30 s...")
+                import time
+                time.sleep(30)
+
+    print("  All screenshot attempts failed — sending without image.")
+    return False
 
 
 def build_html(img_b64):
@@ -89,7 +103,7 @@ def build_html(img_b64):
   }}
   .disclaimer {{
     font-style: italic;
-    font-size: 11pt;
+    font-size: 12pt;
     color: #6b7280;
     border-bottom: 1px solid #e5e7eb;
     padding-bottom: 10px;

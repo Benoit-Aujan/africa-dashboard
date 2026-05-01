@@ -735,7 +735,7 @@ const coloredAreaPlugin = {
 // ─────────────────────────────────────────────────────────────────────
 // Data load
 // ─────────────────────────────────────────────────────────────────────
-fetch("data/data.json")
+fetch("data/data.json?v=" + Date.now())
   .then(r => r.json())
   .then(d => {
     DATA = d;

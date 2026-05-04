@@ -280,22 +280,30 @@ def apply_mgmt_pack_benchmarks(data, prop, rpt_month, parsed, dry_run=False):
     """
     Merges parsed management pack LE/Budget into data["monthly_benchmarks"].
 
+    LE values: always updated (rolling forecast / preliminary → final).
+      - If a previous LE already exists and it changed, the change is recorded
+        for alerting (preliminary vs. final comparison).
+      - Only flag LE changes for the reporting month itself (e.g. March LE from
+        the March pack is "final"; forecasts for future months are preliminary).
     Budget values: immutable once stored — if a value already exists and the
-    incoming value differs, an alert tuple is returned; the old value is kept.
-    LE values: always updated (rolling forecast).
+      incoming value differs, an alert is raised and the old value is kept.
 
-    Returns list of budget-change dicts for alerting:
-      [{"prop", "month", "field", "old_val", "new_val"}, ...]
+    Returns:
+      (budget_alerts, le_alerts)
+      Each is a list of dicts: {"prop", "month", "section", "field", "old_val", "new_val"}
     """
     if "monthly_benchmarks" not in data:
         data["monthly_benchmarks"] = {}
     mb_root = data["monthly_benchmarks"]
     prop_mb = mb_root.setdefault(prop, {})
-    alerts  = []
+    budget_alerts = []
+    le_alerts     = []
+
+    rpt_month_str = rpt_month.strftime("%Y-%m")
 
     for section in ("LE", "Budget"):
         for month_str, vals in parsed.get(section, {}).items():
-            month_entry = prop_mb.setdefault(month_str, {})
+            month_entry   = prop_mb.setdefault(month_str, {})
             section_entry = month_entry.setdefault(section, {})
 
             for key in ("occ", "adr"):
@@ -306,24 +314,41 @@ def apply_mgmt_pack_benchmarks(data, prop, rpt_month, parsed, dry_run=False):
                 existing = section_entry.get(key)
 
                 if section == "Budget" and existing is not None:
-                    # Budget is immutable — check if changed
+                    # Budget is immutable — alert and keep old value
                     if abs(new_val - existing) > 1e-6:
-                        alerts.append({
+                        budget_alerts.append({
                             "prop":    prop,
                             "month":   month_str,
-                            "section": section,
+                            "section": "Budget",
                             "field":   key,
                             "old_val": existing,
                             "new_val": new_val,
                         })
-                    # Keep old value regardless
-                    continue
+                    continue  # keep old value
 
-                # LE (always update) or Budget (first time — just store)
+                if section == "LE" and existing is not None:
+                    # LE can be updated, but flag changes for the reporting month
+                    # (that is the "final" value replacing a "preliminary" one)
+                    if abs(new_val - existing) > 1e-6 and month_str == rpt_month_str:
+                        le_alerts.append({
+                            "prop":    prop,
+                            "month":   month_str,
+                            "section": "LE",
+                            "field":   key,
+                            "old_val": existing,
+                            "new_val": new_val,
+                        })
+
+                # Store/update the value
                 if not dry_run:
                     section_entry[key] = round(new_val, 6)
 
-    return alerts
+    return budget_alerts, le_alerts
+
+
+def _fmt_val(field, val):
+    """Format an occ or ADR value for display."""
+    return f"{val*100:.1f}%" if field == "occ" else f"${val:.1f}"
 
 
 def send_budget_change_alert(outlook, prop, rpt_month, alerts):
@@ -333,16 +358,12 @@ def send_budget_change_alert(outlook, prop, rpt_month, alerts):
     mail.To      = "; ".join(DISC_TO)
     mail.Subject = f"Africa Dashboard — Budget change detected ({prop} {month_label})"
 
-    lines = []
-    for a in alerts:
-        label = "Occupancy" if a["field"] == "occ" else "ADR"
-        unit  = "%" if a["field"] == "occ" else " USD"
-        old_f = f"{a['old_val']*100:.1f}%" if a["field"] == "occ" else f"${a['old_val']:.0f}"
-        new_f = f"{a['new_val']*100:.1f}%" if a["field"] == "occ" else f"${a['new_val']:.0f}"
-        lines.append(
-            f"  - {a['month']} {label}: stored={old_f}, incoming={new_f} → KEPT stored value"
-        )
-
+    lines = [
+        f"  - {a['month']} {'Occupancy' if a['field']=='occ' else 'ADR'}: "
+        f"stored={_fmt_val(a['field'], a['old_val'])}, "
+        f"incoming={_fmt_val(a['field'], a['new_val'])} → KEPT stored value"
+        for a in alerts
+    ]
     mail.Body = (
         f"Africa Dashboard — Budget change detected for {prop} ({month_label})\n"
         f"{'─' * 60}\n\n"
@@ -355,6 +376,39 @@ def send_budget_change_alert(outlook, prop, rpt_month, alerts):
     )
     mail.Send()
     print(f"  Budget change alert sent: {prop} {month_label} ({len(alerts)} diff(s))")
+
+
+def send_le_update_alert(outlook, prop, rpt_month, le_alerts):
+    """
+    Sends a preliminary→final LE comparison email to Benoit + Glenda + Moiz.
+    Fired when the management pack for month M arrives and the LE for M already
+    had a preliminary value (set by the previous month's pack).
+    """
+    month_label = rpt_month.strftime("%B %Y")
+    mail        = outlook.CreateItem(0)
+    mail.To     = "; ".join(DISC_TO)
+    mail.Subject = f"Africa Dashboard — LE updated: preliminary vs. final ({prop} {month_label})"
+
+    lines = [
+        f"  - {'Occupancy' if a['field']=='occ' else 'ADR'}: "
+        f"preliminary={_fmt_val(a['field'], a['old_val'])}, "
+        f"final={_fmt_val(a['field'], a['new_val'])}  "
+        f"(Δ {_fmt_val(a['field'], abs(a['new_val'] - a['old_val']))})"
+        for a in le_alerts
+    ]
+    mail.Body = (
+        f"Africa Dashboard — LE figures updated for {prop} ({month_label})\n"
+        f"{'─' * 60}\n\n"
+        f"The {month_label} management pack has been received. The LE figures for "
+        f"{month_label} have been updated from the preliminary estimate (set by the "
+        f"previous month's pack) to the confirmed values.\n\n"
+        "Comparison — Preliminary → Final:\n"
+        + "\n".join(lines)
+        + "\n\nThe dashboard has been updated with the confirmed figures.\n\n"
+        "Best regards,\nAfrica Dashboard Automation"
+    )
+    mail.Send()
+    print(f"  LE update alert sent: {prop} {month_label} ({len(le_alerts)} change(s))")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -667,14 +721,17 @@ def main():
                 print(f"  WARNING: No data extracted from {os.path.basename(path)}")
                 continue
 
-            budget_alerts = apply_mgmt_pack_benchmarks(data, prop, rpt_month, parsed, args.dry_run)
+            budget_alerts, le_alerts = apply_mgmt_pack_benchmarks(data, prop, rpt_month, parsed, args.dry_run)
             if budget_alerts:
                 all_budget_alerts.append((prop, rpt_month, budget_alerts))
+            if le_alerts and not args.dry_run:
+                send_le_update_alert(outlook, prop, rpt_month, le_alerts)
 
             le_count  = len(parsed.get("LE", {}))
             bgt_count = len(parsed.get("Budget", {}))
             print(f"  Applied: LE={le_count} month(s), Budget={bgt_count} month(s)"
-                  + (f" [{len(budget_alerts)} budget change(s) blocked]" if budget_alerts else ""))
+                  + (f" [{len(budget_alerts)} budget change(s) blocked]" if budget_alerts else "")
+                  + (f" [{len(le_alerts)} LE change(s) → alert sent]" if le_alerts else ""))
 
             if not args.dry_run:
                 state[prop] = month_str

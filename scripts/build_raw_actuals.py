@@ -531,13 +531,18 @@ def parse_mgmt_pack_minor(path, reporting_month, is_mzn=True):
 
     try:
         with open_xlsb(path) as wb:
-            # ── Monthly sheet → LE for current month ──────────────────────────
+            # ── Monthly sheet → LE for ALL months ─────────────────────────────
+            # Jan–(cur_month-1) show actuals (label "Actual"); cur_month onwards
+            # are forecasts ("Forecast"). We store all of them as LE so that
+            # future months get preliminary figures from the current pack, which
+            # are later overwritten when those months' own packs arrive.
             try:
                 with wb.get_sheet("Monthly") as sh:
                     monthly_rows = list(sh.rows())
-                occ, adr = _month_vals(monthly_rows, cur_month)
-                if occ is not None:
-                    results["LE"][f"{year}-{cur_month:02d}"] = {"occ": occ, "adr": adr}
+                for mon in range(1, 13):
+                    occ, adr = _month_vals(monthly_rows, mon)
+                    if occ is not None:
+                        results["LE"][f"{year}-{mon:02d}"] = {"occ": occ, "adr": adr}
             except Exception as e:
                 print(f"  WARNING: 'Monthly' sheet error in {os.path.basename(path)}: {e}")
 
@@ -556,7 +561,7 @@ def parse_mgmt_pack_minor(path, reporting_month, is_mzn=True):
         print(f"  ERROR parsing management pack {os.path.basename(path)}: {e}")
         return {}
 
-    print(f"  Mgmt pack minor parsed: LE={list(results['LE'].keys())}, "
+    print(f"  Mgmt pack minor parsed: LE={len(results['LE'])} months, "
           f"Budget={len(results['Budget'])} months")
     return results
 

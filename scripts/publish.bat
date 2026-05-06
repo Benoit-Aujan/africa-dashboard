@@ -1,9 +1,10 @@
 @echo off
 :: publish.bat
 :: 1. Push updated data.json to GitHub Pages.
-:: 2. Wait for GitHub Pages deployment (~90 s).
-:: 3. Take a fresh MTD screenshot → scripts/mtd_snapshot.png
+:: 2. Take a fresh MTD screenshot → scripts/mtd_snapshot.png
 ::    (The Monday/Friday notification email reads this pre-saved file.)
+::    The 90s GitHub Pages deployment wait is handled inside take_snapshot.py
+::    using Python's time.sleep() — reliable in both interactive and Task Scheduler.
 ::
 :: Called automatically by the daily 12:00 PM scheduled task.
 
@@ -13,7 +14,7 @@ cd /d "C:\Claude Projects\projects\africa-dashboard"
 git add data/data.json
 git diff --cached --quiet
 if %errorlevel% equ 0 (
-    echo No data changes to publish — skipping push.
+    echo No data changes to publish.
     goto snapshot
 )
 
@@ -24,11 +25,7 @@ git commit -m "Daily update %stamp%"
 git push origin main
 echo Published to GitHub Pages: %stamp%
 
-:: ── Step 2: Wait for GitHub Pages deployment ─────────────────────────────────
-echo Waiting 90s for GitHub Pages deployment...
-timeout /t 90 /nobreak >nul
-
-:: ── Step 3: Take dashboard snapshot ──────────────────────────────────────────
+:: ── Step 2: Take dashboard snapshot (with deployment wait baked in) ───────────
 :snapshot
 echo Taking dashboard snapshot...
-python scripts\take_snapshot.py
+python scripts\take_snapshot.py --wait 90

@@ -9,7 +9,7 @@ Usage:
     python scripts/take_snapshot.py --wait 90   # wait N seconds first (post-push)
 """
 
-import argparse, datetime, os, sys, time
+import argparse, datetime, os, subprocess, sys, time
 from playwright.sync_api import sync_playwright
 
 BASE          = os.path.dirname(os.path.abspath(__file__))
@@ -68,10 +68,20 @@ def take_snapshot():
             return True
 
         except Exception as e:
-            log(f"Attempt {attempt}/{MAX_ATTEMPTS} failed: {e}")
-            if attempt < MAX_ATTEMPTS:
-                log(f"Retrying in {RETRY_WAIT_SEC}s...")
-                time.sleep(RETRY_WAIT_SEC)
+            err_str = str(e)
+            # Self-heal: if Playwright was upgraded and browser binary is missing,
+            # reinstall it automatically rather than burning all retry slots.
+            if "Executable doesn't exist" in err_str or "playwright install" in err_str:
+                log(f"Browser binary missing — running 'playwright install chromium'...")
+                subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"],
+                               capture_output=True)
+                log("Browser install complete — retrying immediately.")
+                # No sleep; continue to next attempt right away
+            else:
+                log(f"Attempt {attempt}/{MAX_ATTEMPTS} failed: {err_str[:200]}")
+                if attempt < MAX_ATTEMPTS:
+                    log(f"Retrying in {RETRY_WAIT_SEC}s...")
+                    time.sleep(RETRY_WAIT_SEC)
 
     log("All snapshot attempts failed — mtd_snapshot.png NOT updated.")
     return False

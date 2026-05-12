@@ -119,8 +119,14 @@ MGMT_PACK_CFG = {
         ["ASLV", "MANAGEMENT PACK"],
         re.compile(r"ASLV.*Hotel.*Finance.*Template.*\.xlsb$", re.IGNORECASE),
     ),
-    # Hamilton also sends daily VPEM files — management packs are distinguished by filename
+    # Hamilton (primary) and Busani (backup) send Pemba management packs.
+    # Both also send daily VPEM files — packs are distinguished by filename.
     "hpasipamire@minorhotels.com": (
+        "Pemba",
+        ["CDHR", "FINANCIAL REPORTS"],
+        re.compile(r"VPEM.*Hotel.*Finance.*Template.*\.xlsb$", re.IGNORECASE),
+    ),
+    "bjubane@nhhotels.com": (
         "Pemba",
         ["CDHR", "FINANCIAL REPORTS"],
         re.compile(r"VPEM.*Hotel.*Finance.*Template.*\.xlsb$", re.IGNORECASE),

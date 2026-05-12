@@ -35,6 +35,31 @@ Usage:
 import argparse, datetime, json, os, re, subprocess, sys
 import win32com.client
 
+# ── Log file (captures all output so Task Scheduler crashes are diagnosable) ──
+_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "update.log")
+
+class _Tee:
+    """Writes to both the original stream and the log file."""
+    def __init__(self, stream):
+        self._stream = stream
+        self._file   = open(_LOG_PATH, "a", encoding="utf-8", buffering=1)
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self._file.write(f"\n{'='*60}\n[{ts}] update_from_email.py started\n{'='*60}\n")
+
+    def write(self, data):
+        self._stream.write(data)
+        self._file.write(data)
+
+    def flush(self):
+        self._stream.flush()
+        self._file.flush()
+
+    def fileno(self):          # needed by subprocess
+        return self._stream.fileno()
+
+sys.stdout = _Tee(sys.stdout)
+sys.stderr = _Tee(sys.stderr)
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from build_raw_actuals import (
     parse_tracker, parse_radisson, parse_abaz_daily, parse_vpem_daily,
@@ -710,12 +735,17 @@ def main():
             month_str = rpt_month.strftime("%Y-%m")
             print(f"\nParsing {prop} management pack ({month_str}): {os.path.basename(path)}")
 
-            if prop == "Radisson":
-                parsed = parse_mgmt_pack_radisson(path, rpt_month)
-            else:
-                # ABAZ and Pemba: revenue in MZN-thousands; ASLV: USD-thousands
-                is_mzn = (prop in ("ABAZ", "Pemba"))
-                parsed = parse_mgmt_pack_minor(path, rpt_month, is_mzn=is_mzn)
+            try:
+                if prop == "Radisson":
+                    parsed = parse_mgmt_pack_radisson(path, rpt_month)
+                else:
+                    # ABAZ and Pemba: revenue in MZN-thousands; ASLV: USD-thousands
+                    is_mzn = (prop in ("ABAZ", "Pemba"))
+                    parsed = parse_mgmt_pack_minor(path, rpt_month, is_mzn=is_mzn)
+            except Exception as e:
+                print(f"  ERROR parsing {os.path.basename(path)}: {e}")
+                import traceback; traceback.print_exc()
+                continue
 
             if not parsed or (not parsed.get("LE") and not parsed.get("Budget")):
                 print(f"  WARNING: No data extracted from {os.path.basename(path)}")

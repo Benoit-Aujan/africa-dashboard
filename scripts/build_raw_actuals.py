@@ -531,15 +531,19 @@ def parse_mgmt_pack_minor(path, reporting_month, is_mzn=True):
 
     try:
         with open_xlsb(path) as wb:
-            # ── Monthly sheet → LE for ALL months ─────────────────────────────
-            # Jan–(cur_month-1) show actuals (label "Actual"); cur_month onwards
-            # are forecasts ("Forecast"). We store all of them as LE so that
-            # future months get preliminary figures from the current pack, which
-            # are later overwritten when those months' own packs arrive.
+            # ── Monthly sheet → LE for FORECAST months only ───────────────────
+            # Jan–cur_month are actuals; (cur_month+1)–Dec are forecasts.
+            # We extract only the forecast months as LE:
+            #   • cur_month+1 is the "confirmed LE" for this pack (was preliminary
+            #     in the previous pack); triggers a preliminary→final alert.
+            #   • cur_month+2 through Dec are preliminary forecasts, stored as LE
+            #     and updated when their own pack arrives.
+            # The reporting month's column (cur_month) is actual performance —
+            # it must NOT overwrite the LE that was set by the prior pack.
             try:
                 with wb.get_sheet("Monthly") as sh:
                     monthly_rows = list(sh.rows())
-                for mon in range(1, 13):
+                for mon in range(cur_month + 1, 13):
                     occ, adr = _month_vals(monthly_rows, mon)
                     if occ is not None:
                         results["LE"][f"{year}-{mon:02d}"] = {"occ": occ, "adr": adr}
@@ -686,15 +690,21 @@ def parse_mgmt_pack_radisson(path, reporting_month):
                     "adr": round(bgt_rev * 1000 / FX / bgt_occ, 4),
                 }
 
-            # LE (FORECAST_12)
-            le_rev   = _sf(all_rows[rev_row],   b_start + 5)
-            le_avail = _sf(all_rows[avail_row], b_start + 6)
-            le_occ   = _sf(all_rows[occ_row],   b_start + 6)
-            if le_rev and le_avail and le_occ and le_avail > 0 and le_occ > 0:
-                results["LE"][month_str] = {
-                    "occ": round(le_occ / le_avail, 6),
-                    "adr": round(le_rev * 1000 / FX / le_occ, 4),
-                }
+            # LE (FORECAST_12) — only for forecast months (after reporting month)
+            # Actual months (≤ reporting month) must not overwrite stored LE.
+            le_is_forecast = (
+                yr > reporting_month.year or
+                (yr == reporting_month.year and mon > reporting_month.month)
+            )
+            if le_is_forecast:
+                le_rev   = _sf(all_rows[rev_row],   b_start + 5)
+                le_avail = _sf(all_rows[avail_row], b_start + 6)
+                le_occ   = _sf(all_rows[occ_row],   b_start + 6)
+                if le_rev and le_avail and le_occ and le_avail > 0 and le_occ > 0:
+                    results["LE"][month_str] = {
+                        "occ": round(le_occ / le_avail, 6),
+                        "adr": round(le_rev * 1000 / FX / le_occ, 4),
+                    }
 
     except Exception as e:
         print(f"  ERROR parsing Radisson mgmt pack {os.path.basename(path)}: {e}")

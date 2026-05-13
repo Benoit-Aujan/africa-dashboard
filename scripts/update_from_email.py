@@ -330,7 +330,14 @@ def apply_mgmt_pack_benchmarks(data, prop, rpt_month, parsed, dry_run=False):
     budget_alerts = []
     le_alerts     = []
 
-    rpt_month_str = rpt_month.strftime("%Y-%m")
+    # "Confirmed LE" month: the first forecast month in this pack (rpt_month + 1).
+    # This is what was set as "preliminary" by the previous pack. When the current
+    # pack arrives, that month's LE becomes confirmed → alert if it changed.
+    if rpt_month.month < 12:
+        next_month = datetime.date(rpt_month.year, rpt_month.month + 1, 1)
+    else:
+        next_month = datetime.date(rpt_month.year + 1, 1, 1)
+    next_month_str = next_month.strftime("%Y-%m")
 
     for section in ("LE", "Budget"):
         for month_str, vals in parsed.get(section, {}).items():
@@ -358,9 +365,10 @@ def apply_mgmt_pack_benchmarks(data, prop, rpt_month, parsed, dry_run=False):
                     continue  # keep old value
 
                 if section == "LE" and existing is not None:
-                    # LE can be updated, but flag changes for the reporting month
-                    # (that is the "final" value replacing a "preliminary" one)
-                    if abs(new_val - existing) > 1e-6 and month_str == rpt_month_str:
+                    # Alert when the first forecast month (rpt_month+1) changes:
+                    # that is the preliminary→final transition.
+                    # Months rpt_month+2 onwards are still preliminary — no alert.
+                    if abs(new_val - existing) > 1e-6 and month_str == next_month_str:
                         le_alerts.append({
                             "prop":    prop,
                             "month":   month_str,
@@ -412,13 +420,25 @@ def send_budget_change_alert(outlook, prop, rpt_month, alerts):
 def send_le_update_alert(outlook, prop, rpt_month, le_alerts):
     """
     Sends a preliminary→final LE comparison email to Benoit + Glenda + Moiz.
-    Fired when the management pack for month M arrives and the LE for M already
-    had a preliminary value (set by the previous month's pack).
+
+    Fired when the management pack for reporting month M arrives and the LE for
+    M+1 (the first forecast month) already had a preliminary value (set by the
+    previous month's pack).  The subject/body reference M+1, not M.
+
+    Example: April pack arrives → May LE transitions from preliminary to confirmed.
+             Alert subject: "LE updated: preliminary vs. final (ABAZ May 2026)"
     """
-    month_label = rpt_month.strftime("%B %Y")
+    # Determine the confirmed month: rpt_month + 1
+    if rpt_month.month < 12:
+        confirmed_month = datetime.date(rpt_month.year, rpt_month.month + 1, 1)
+    else:
+        confirmed_month = datetime.date(rpt_month.year + 1, 1, 1)
+    confirmed_label = confirmed_month.strftime("%B %Y")
+    rpt_label       = rpt_month.strftime("%B %Y")
+
     mail        = outlook.CreateItem(0)
     mail.To     = "; ".join(DISC_TO)
-    mail.Subject = f"Africa Dashboard — LE updated: preliminary vs. final ({prop} {month_label})"
+    mail.Subject = f"Africa Dashboard — LE updated: preliminary vs. final ({prop} {confirmed_label})"
 
     lines = [
         f"  - {'Occupancy' if a['field']=='occ' else 'ADR'}: "
@@ -428,18 +448,18 @@ def send_le_update_alert(outlook, prop, rpt_month, le_alerts):
         for a in le_alerts
     ]
     mail.Body = (
-        f"Africa Dashboard — LE figures updated for {prop} ({month_label})\n"
+        f"Africa Dashboard — LE figures updated for {prop} ({confirmed_label})\n"
         f"{'─' * 60}\n\n"
-        f"The {month_label} management pack has been received. The LE figures for "
-        f"{month_label} have been updated from the preliminary estimate (set by the "
-        f"previous month's pack) to the confirmed values.\n\n"
+        f"The {rpt_label} management pack has been received. The LE figures for "
+        f"{confirmed_label} have been updated from the preliminary estimate (set by the "
+        f"{rpt_label[:3]} pack) to the confirmed values from the {rpt_label} pack.\n\n"
         "Comparison — Preliminary → Final:\n"
         + "\n".join(lines)
         + "\n\nThe dashboard has been updated with the confirmed figures.\n\n"
         "Best regards,\nAfrica Dashboard Automation"
     )
     mail.Send()
-    print(f"  LE update alert sent: {prop} {month_label} ({len(le_alerts)} change(s))")
+    print(f"  LE update alert sent: {prop} {confirmed_label} ({len(le_alerts)} change(s))")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

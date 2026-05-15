@@ -11,7 +11,7 @@ To:  Abdulla Aujan, Dave Anderson, Elena Son
 CC:  Muhammad Moiz Siddiqui, Glenda Gallego, Ghufran Mumtaz, Benoit Haas
 """
 
-import sys, datetime, base64, os
+import sys, datetime, base64, os, json, subprocess
 import win32com.client
 
 DASHBOARD_URL  = "https://benoit-aujan.github.io/africa-dashboard/"
@@ -111,7 +111,98 @@ Benoit</p>
 """
 
 
-def main(draft_only=False):
+DATA_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "data.json")
+DATA_MAX_AGE_DAYS = 2   # alert if latest date in data.json is older than this
+
+ALERT_TO = ["Benoit Haas <benoit.haas@aujan.com>"]
+
+
+def check_data_freshness():
+    """
+    Verifies that:
+      1. data.json exists and has a recent latest date (≤ DATA_MAX_AGE_DAYS old).
+      2. The local git branch is up to date with origin/main (push succeeded).
+
+    Returns (ok: bool, reason: str).
+    ok=True  → safe to send.
+    ok=False → email should be blocked; reason explains why.
+    """
+    # ── 1. Check data.json freshness ─────────────────────────────────────────
+    try:
+        with open(DATA_JSON, encoding="utf-8") as f:
+            data = json.load(f)
+        daily = data.get("daily", {})
+        if not daily:
+            return False, "data.json has no daily records"
+        latest_date_str = max(daily.keys())
+        latest_date     = datetime.date.fromisoformat(latest_date_str)
+        today           = datetime.date.today()
+        age_days        = (today - latest_date).days
+        if age_days > DATA_MAX_AGE_DAYS:
+            return False, (
+                f"Latest date in data.json is {latest_date_str} "
+                f"({age_days} days ago — expected ≤ {DATA_MAX_AGE_DAYS} days old). "
+                f"Daily update task may have failed."
+            )
+        print(f"  Data freshness OK: latest date = {latest_date_str} ({age_days}d ago)")
+    except Exception as e:
+        return False, f"Could not read data.json: {e}"
+
+    # ── 2. Check git push succeeded (local == origin/main) ───────────────────
+    try:
+        repo = os.path.dirname(os.path.abspath(DATA_JSON + "/.."))
+        result = subprocess.run(
+            ["git", "-C", repo, "status", "--short", "--branch"],
+            capture_output=True, text=True, timeout=15,
+        )
+        output = result.stdout.strip()
+        if "ahead" in output:
+            return False, (
+                f"Local branch is ahead of origin/main — git push did not complete.\n"
+                f"git status: {output}"
+            )
+        print(f"  Git push OK: branch is up to date with origin/main")
+    except Exception as e:
+        return False, f"Could not check git status: {e}"
+
+    return True, "OK"
+
+
+def send_data_alert(outlook, reason):
+    """Sends a data-not-uploaded warning to Benoit instead of the normal email."""
+    mail         = outlook.CreateItem(0)
+    mail.To      = "; ".join(ALERT_TO)
+    mail.Subject = "Africa Dashboard — Notification BLOCKED: data not uploaded"
+    mail.Body    = (
+        f"Africa Dashboard — Monday/Friday notification was NOT sent.\n"
+        f"{'─' * 60}\n\n"
+        f"Reason: {reason}\n\n"
+        "The dashboard email has been blocked until the data is confirmed "
+        "up to date on GitHub Pages.\n\n"
+        "Action required:\n"
+        "  1. Check the Task Scheduler for 'Africa Dashboard Daily Update'\n"
+        "  2. Run manually if needed: python scripts\\update_from_email.py\n"
+        "  3. Then: scripts\\publish.bat\n\n"
+        "Best regards,\nAfrica Dashboard Automation"
+    )
+    mail.Send()
+    print(f"  WARNING email sent to Benoit: {reason}")
+
+
+def main(draft_only=False, force=False):
+    # 0. Verify data is fresh and pushed to GitHub (skip check with --force)
+    if not draft_only and not force:
+        print("Checking data freshness before sending...")
+        ok, reason = check_data_freshness()
+        if not ok:
+            print(f"  BLOCKED: {reason}")
+            try:
+                outlook = win32com.client.Dispatch("Outlook.Application")
+                send_data_alert(outlook, reason)
+            except Exception as e:
+                print(f"  Could not send alert email: {e}")
+            sys.exit(1)
+
     # 1. Load the pre-saved snapshot (taken by take_snapshot.py during publish)
     print("Loading dashboard snapshot...")
     img_b64, age = load_snapshot()
@@ -143,6 +234,7 @@ def main(draft_only=False):
 if __name__ == "__main__":
     import argparse
     p = argparse.ArgumentParser()
-    p.add_argument("--draft", action="store_true", help="Save as Outlook draft instead of sending")
+    p.add_argument("--draft",  action="store_true", help="Save as Outlook draft instead of sending")
+    p.add_argument("--force",  action="store_true", help="Skip data freshness check and send anyway")
     args = p.parse_args()
-    main(draft_only=args.draft)
+    main(draft_only=args.draft, force=args.force)

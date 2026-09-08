@@ -27,6 +27,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_JSON = os.path.join(BASE, "data", "data.json")
 TEMP = "C:/Users/benoit.haas/AppData/Local/Temp"
 FX = 65.0  # MZN → USD
+TODAY = datetime.date.today().isoformat()  # no future dates admitted to the dashboard
 
 # All tracker files in Temp (date-prefixed saves from email + legacy undated copies),
 # sorted oldest→newest so newer files win on overlap.
@@ -102,7 +103,19 @@ def parse_tracker(path):
                     date = date.replace(year=year)
                 except ValueError:
                     continue
+            # Month correction: new-month sheet created from prior-month template
+            # (e.g. AUG26 sheet still has July dates because template wasn't updated)
+            if date.month != month_num:
+                try:
+                    corrected = date.replace(month=month_num)
+                    print(f"  WARNING: {shname} date {date.strftime('%Y-%m-%d')} "
+                          f"corrected to {corrected.strftime('%Y-%m-%d')} (sheet month mismatch)")
+                    date = corrected
+                except ValueError:
+                    continue
             date_str = date.strftime("%Y-%m-%d")
+            if date_str > TODAY:
+                continue
 
             if prop_key == "VPEM":
                 rooms_occ = row[9]
@@ -186,6 +199,8 @@ def parse_radisson(path):
         try:
             date = datetime.date(*xlrd.xldate_as_tuple(date_val, wb.datemode)[:3])
             date_str = date.strftime("%Y-%m-%d")
+            if date_str > TODAY:
+                continue
         except Exception:
             continue
 
@@ -251,6 +266,8 @@ def parse_radisson_pdf(path):
         return {}
     day, month, yr2 = int(m.group(1)), int(m.group(2)), int(m.group(3))
     date_str = f"{2000 + yr2}-{month:02d}-{day:02d}"
+    if date_str > TODAY:
+        return {}
 
     def _day_val(label):
         """Return the first numeric token after `label` at line start (DAY_2026 column)."""
@@ -302,6 +319,8 @@ def parse_abaz_daily(path):
     if not m:
         return {}
     date_str = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    if date_str > TODAY:
+        return {}
 
     try:
         with open_xlsb(path) as wb:
@@ -402,6 +421,8 @@ def parse_vpem_daily(path):
                 date_str = f"{year}-{month:02d}-{day:02d}"
         except Exception:
             return {}
+    if date_str > TODAY:
+        return {}
 
     try:
         with open_xlsb(path) as wb:
@@ -817,7 +838,12 @@ def main():
             daily[date_str] = new_rec
             inserted += 1
 
-    # Re-sort daily by date
+    # Re-sort daily by date and strip any future dates that snuck in via cached files
+    purged = [d for d in daily if d > TODAY]
+    for d in purged:
+        del daily[d]
+    if purged:
+        print(f"Purged {len(purged)} future date(s) from daily: {purged[0]} … {purged[-1]}")
     data["daily"] = dict(sorted(daily.items()))
 
     print("\nDaily records updated:")

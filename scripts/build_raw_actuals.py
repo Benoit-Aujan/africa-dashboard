@@ -27,7 +27,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_JSON = os.path.join(BASE, "data", "data.json")
 TEMP = "C:/Users/benoit.haas/AppData/Local/Temp"
 FX = 65.0  # MZN → USD
-TODAY = datetime.date.today().isoformat()  # no future dates admitted to the dashboard
+TODAY = datetime.date.today().isoformat()  # only dates strictly before today (data finalised next morning)
 
 # All tracker files in Temp (date-prefixed saves from email + legacy undated copies),
 # sorted oldest→newest so newer files win on overlap.
@@ -114,7 +114,7 @@ def parse_tracker(path):
                 except ValueError:
                     continue
             date_str = date.strftime("%Y-%m-%d")
-            if date_str > TODAY:
+            if date_str >= TODAY:
                 continue
 
             if prop_key == "VPEM":
@@ -199,7 +199,7 @@ def parse_radisson(path):
         try:
             date = datetime.date(*xlrd.xldate_as_tuple(date_val, wb.datemode)[:3])
             date_str = date.strftime("%Y-%m-%d")
-            if date_str > TODAY:
+            if date_str >= TODAY:
                 continue
         except Exception:
             continue
@@ -266,7 +266,7 @@ def parse_radisson_pdf(path):
         return {}
     day, month, yr2 = int(m.group(1)), int(m.group(2)), int(m.group(3))
     date_str = f"{2000 + yr2}-{month:02d}-{day:02d}"
-    if date_str > TODAY:
+    if date_str >= TODAY:
         return {}
 
     def _day_val(label):
@@ -319,7 +319,7 @@ def parse_abaz_daily(path):
     if not m:
         return {}
     date_str = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
-    if date_str > TODAY:
+    if date_str >= TODAY:
         return {}
 
     try:
@@ -421,7 +421,7 @@ def parse_vpem_daily(path):
                 date_str = f"{year}-{month:02d}-{day:02d}"
         except Exception:
             return {}
-    if date_str > TODAY:
+    if date_str >= TODAY:
         return {}
 
     try:
@@ -839,7 +839,7 @@ def main():
             inserted += 1
 
     # Re-sort daily by date and strip any future dates that snuck in via cached files
-    purged = [d for d in daily if d > TODAY]
+    purged = [d for d in daily if d >= TODAY]
     for d in purged:
         del daily[d]
     if purged:

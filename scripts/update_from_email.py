@@ -89,7 +89,8 @@ ABAZ_SENDERS = {
 # These send individual Pemba/VPEM reports (Excel, tracker format)
 PEMBA_SENDERS = {
     "hpasipamire@minorhotels.com",  # Hamilton Pasipamire (primary)
-    "bjubane@nhhotels.com",          # Busani Jubane (backup)
+    "bjubane@nhhotels.com",          # Busani Jubane (backup, old domain)
+    "bjubane@avanihotels.com",       # Busani Jubane (backup, new domain)
 }
 
 # These send Radisson Revenue Report Excel files

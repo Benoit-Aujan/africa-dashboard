@@ -3,10 +3,6 @@
 :: 1. Push updated data.json to GitHub Pages.
 :: 2. Take a fresh MTD screenshot → scripts/mtd_snapshot.png
 ::    (The Monday/Friday notification email reads this pre-saved file.)
-::    The 90s GitHub Pages deployment wait is handled inside take_snapshot.py
-::    using Python's time.sleep() — reliable in both interactive and Task Scheduler.
-::
-:: Called automatically by the daily 12:00 PM scheduled task.
 
 cd /d "C:\Claude Projects\projects\africa-dashboard"
 
@@ -18,11 +14,21 @@ if %errorlevel% equ 0 (
     goto snapshot
 )
 
-for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set dt=%%I
-set stamp=%dt:~0,4%-%dt:~4,2%-%dt:~6,2%
+:: Use Python for the date stamp — wmic parsing is unreliable in Task Scheduler
+for /f %%d in ('"C:\Users\benoit.haas\AppData\Local\Programs\Python\Python314\python.exe" -c "import datetime; print(datetime.date.today().isoformat())"') do set stamp=%%d
 
 git commit -m "Daily update %stamp%"
+
 git push origin main
+if %errorlevel% neq 0 (
+    echo WARNING: git push failed, retrying in 15s...
+    timeout /t 15 /nobreak >nul
+    git push origin main
+    if %errorlevel% neq 0 (
+        echo ERROR: git push failed twice. Data committed but NOT published to GitHub Pages.
+        exit /b 1
+    )
+)
 echo Published to GitHub Pages: %stamp%
 
 :: ── Step 2: Take dashboard snapshot (with deployment wait baked in) ───────────

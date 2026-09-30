@@ -32,8 +32,9 @@ TODAY = datetime.date.today().isoformat()  # only dates strictly before today (d
 # All tracker files in Temp (date-prefixed saves from email + legacy undated copies),
 # sorted oldest→newest so newer files win on overlap.
 TRACKER_FILES = sorted(
-    glob.glob(f"{TEMP}/*VPEM_ABAZ_ASLV*Pick Up Tracker*.xlsx"),
-    key=os.path.getmtime,
+    glob.glob(f"{TEMP}/*VPEM_ABAZ_ASLV*Pick Up Tracker*.xlsx") +
+    glob.glob(f"{TEMP}/*Africa_Properties_Daily_Product_View*.xlsx"),
+    key=os.path.getmtime,   # oldest first → newest file wins on overlap
 )
 
 # Exclude the partial March 2026 file; include all others
